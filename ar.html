@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>AR GPS Space Defense</title>
+    <!-- Библиотека A-Frame -->
+    <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+    <!-- Библиотека AR.js для A-Frame -->
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+    <!-- Библиотека для GPS -->
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+  </head>
+
+  <body style="margin: 0; overflow: hidden;">
+    <!-- vr-mode-ui="enabled: false" отключает кнопку VR, так как это AR -->
+    <!-- gps-camera-debug поможет увидеть направление на объект -->
+    <a-scene 
+      vr-mode-ui="enabled: false"
+      embedded
+      arjs="sourceType: webcam; debugUIEnabled: false;">
+
+      <a-assets>
+        <a-asset-item id="turret" src="assets/turel.glb"></a-asset-item>
+      </a-assets>
+
+      <!-- 
+        GPS ОБЪЕКТ: 
+        Замени latitude и longitude на координаты своего дома (можно взять из Google Maps).
+        Когда ты придешь в эту точку и наведешь камеру, ты увидишь свою турель в небе!
+      -->
+      <a-entity 
+        gltf-model="#turret"
+        scale="1 1 1"
+        gps-entity-place="latitude: 55.7558; longitude: 37.6173;" 
+        animation="property: rotation; to: 0 360 0; loop: true; dur: 10000">
+      </a-entity>
+
+      <!-- Текст, который всегда показывает расстояние до объекта -->
+      <a-text id="distanceText" value="Looking for GPS signal..." look-at="[gps-camera]" scale="5 5 5" gps-entity-place="latitude: 55.7558; longitude: 37.6173;" position="0 10 0"></a-text>
+
+      <!-- Специальная камера для AR + GPS -->
+      <a-camera gps-camera rotation-reader></a-camera>
+    </a-scene>
+  </body>
+</html>

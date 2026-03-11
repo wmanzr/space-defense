@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Space Defense - Full Game</title>
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-physics-system@v4.2.2/dist/aframe-physics-system.min.js"></script>
+    
+    <script>
+      let score = 0;
+      let gameActive = true;
+
+      // 1. Компонент для создания врагов
+      AFRAME.registerComponent('spawner', {
+        init: function () {
+          this.timer = 0;
+        },
+        tick: function (time, timeDelta) {
+          if (!gameActive) return;
+          this.timer += timeDelta;
+          if (this.timer > 2000) { // Каждые 2 секунды
+            this.spawnEnemy();
+            this.timer = 0;
+          }
+        },
+        spawnEnemy: function () {
+          let enemy = document.createElement('a-sphere');
+          let posX = (Math.random() - 0.5) * 20; // Случайно от -10 до 10
+          enemy.setAttribute('class', 'enemy');
+          enemy.setAttribute('color', 'red');
+          enemy.setAttribute('radius', '0.7');
+          enemy.setAttribute('position', posX + ' 15 -15');
+          enemy.setAttribute('dynamic-body', 'shape: sphere');
+          enemy.setAttribute('enemy-logic', '');
+          this.el.sceneEl.appendChild(enemy);
+        }
+      });
+
+      // 2. Логика уничтожения
+      AFRAME.registerComponent('enemy-logic', {
+        init: function () {
+          this.el.addEventListener('click', () => {
+            if (!gameActive) return;
+            score++;
+            document.querySelector('#scoreText').setAttribute('value', 'Score: ' + score);
+            this.el.parentNode.removeChild(this.el);
+          });
+          
+          // Проверка падения на землю
+          this.el.addEventListener('collide', (e) => {
+            if (e.detail.body.el.id === 'ground') {
+              gameActive = false;
+              document.querySelector('#gameOverText').setAttribute('visible', true);
+            }
+          });
+        }
+      });
+
+      // 3. Поворот турели за камерой
+      AFRAME.registerComponent('look-at-mouse', {
+        tick: function () {
+          let cameraRot = document.querySelector('#camera').getAttribute('rotation');
+          this.el.setAttribute('rotation', `0 ${cameraRot.y} 0`);
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <a-scene physics="debug: false" spawner>
+      
+      <a-assets>
+        <img id="space-texture" src="assets/space.jpg">
+        <a-asset-item id="turret-model" src="assets/turel.glb"></a-asset-item>
+        <img id="result-img" src="https://img.icons8.com/clouds/500/000000/trophy.png">
+      </a-assets>
+
+      <a-sky src="#space-texture"></a-sky>
+
+      <!-- ЗЕМЛЯ с ID для отслеживания столкновений -->
+      <a-plane id="ground" static-body rotation="-90 0 0" width="100" height="100" opacity="0.2" color="blue"></a-plane>
+
+      <!-- ТУРЕЛЬ с компонентом слежения -->
+      <a-entity id="player-turret" 
+                gltf-model="#turret-model" 
+                position="0 0 -2" 
+                scale="0.3 0.3 0.3" 
+                look-at-mouse>
+        <a-text id="scoreText" value="Score: 0" position="0 8 0" align="center" color="cyan" width="20"></a-text>
+      </a-entity>
+
+      <!-- ТЕКСТ ЗАВЕРШЕНИЯ ИГРЫ (скрыт в начале) -->
+      <a-entity id="gameOverText" visible="false" position="0 2 -4">
+        <a-text value="GAME OVER" color="red" align="center" width="10"></a-text>
+        <a-image src="#result-img" position="0 -1 0"></a-image>
+      </a-entity>
+
+      <a-entity id="camera" camera look-controls position="0 1.6 0">
+        <a-cursor color="yellow"></a-cursor>
+      </a-entity>
+
+      <a-entity light="type: ambient; intensity: 0.7"></a-entity>
+      <a-entity light="type: directional; intensity: 1" position="1 4 3"></a-entity>
+
+    </a-scene>
+  </body>
+</html>
