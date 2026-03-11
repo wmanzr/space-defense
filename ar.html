@@ -2,44 +2,138 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>AR GPS Space Defense</title>
-    <!-- Библиотека A-Frame -->
+    <title>AR GPS Defense</title>
     <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
-    <!-- Библиотека AR.js для A-Frame -->
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
-    <!-- Библиотека для GPS -->
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
+    <script>
+      // Компонент игровой логики AR
+      AFRAME.registerComponent('ar-game-logic', {
+        init: function () {
+          this.score = 0;
+          this.enemiesAlive = 3;
+          
+          let btn = document.getElementById('start-btn');
+          let ui = document.getElementById('ui-container');
+
+          // Ждем клика по кнопке старта, чтобы браузер разрешил камеру
+          btn.addEventListener('click', () => {
+            ui.style.display = 'none'; // Прячем кнопку
+            this.startGame();
+          });
+        },
+
+        startGame: function () {
+          // Запрашиваем текущие GPS координаты игрока
+          if ('geolocation' in navigator) {
+            navigator.geolocation.getCurrentPosition((position) => {
+              let lat = position.coords.latitude;
+              let lon = position.coords.longitude;
+              
+              // Создаем 3 врагов вокруг игрока с помощью математики
+              // 0.0002 градуса - это примерно 20 метров в реальном мире
+              this.spawnEnemy(lat + 0.0002, lon, "red"); // Враг на Севере
+              this.spawnEnemy(lat, lon + 0.0002, "orange"); // Враг на Востоке
+              this.spawnEnemy(lat - 0.0002, lon - 0.0002, "purple"); // Враг на Юго-Западе
+
+              document.getElementById('score-display').innerText = "Врагов найдено: 0 / 3\nОсмотритесь вокруг!";
+            }, (error) => {
+              alert("Ошибка GPS: Разрешите доступ к геопозиции!");
+            }, { enableHighAccuracy: true });
+          }
+        },
+
+        spawnEnemy: function(lat, lon, color) {
+          let scene = document.querySelector('a-scene');
+          let enemy = document.createElement('a-sphere');
+          
+          // Задаем параметры врага
+          enemy.setAttribute('radius', '2'); // Большой размер, чтобы было видно издалека
+          enemy.setAttribute('color', color);
+          enemy.setAttribute('class', 'clickable'); // Чтобы по нему можно было кликать
+          
+          // ВАЖНО: Привязываем врага к сгенерированным GPS координатам
+          enemy.setAttribute('gps-entity-place', `latitude: ${lat}; longitude: ${lon};`);
+          
+          // Поднимаем его на 5 метров над землей
+          enemy.setAttribute('position', '0 5 0'); 
+          
+          // Анимация левитации
+          enemy.setAttribute('animation', 'property: position; to: 0 6 0; dir: alternate; dur: 2000; loop: true');
+
+          // Логика уничтожения при клике
+          enemy.addEventListener('click', () => {
+            this.score++;
+            this.enemiesAlive--;
+            document.getElementById('score-display').innerText = `Сбито: ${this.score} / 3`;
+            
+            // Звук пиканья (используем встроенный генератор звука браузера для надежности)
+            let ctx = new (window.AudioContext || window.webkitAudioContext)();
+            let osc = ctx.createOscillator();
+            osc.connect(ctx.destination);
+            osc.frequency.value = 800;
+            osc.start();
+            osc.stop(ctx.currentTime + 0.1);
+
+            // Удаляем сферу
+            enemy.parentNode.removeChild(enemy);
+
+            // Проверка победы
+            if (this.enemiesAlive === 0) {
+              document.getElementById('score-display').innerText = "МИССИЯ ВЫПОЛНЕНА!\nВсе координаты зачищены.";
+            }
+          });
+
+          scene.appendChild(enemy);
+        }
+      });
+    </script>
+
+    <!-- HTML поверх камеры (Стили для кнопок и текста) -->
+    <style>
+      #ui-container {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.8); z-index: 1000;
+        display: flex; justify-content: center; align-items: center;
+      }
+      #start-btn {
+        padding: 20px 40px; font-size: 24px; font-weight: bold; background: #00FF00;
+        border: none; border-radius: 10px; cursor: pointer; text-align: center;
+      }
+      #score-display {
+        position: absolute; top: 20px; left: 0; width: 100%; text-align: center;
+        color: cyan; font-size: 24px; font-family: sans-serif; font-weight: bold; z-index: 500;
+        text-shadow: 2px 2px 4px #000;
+      }
+      .crosshair {
+        position: absolute; top: 50%; left: 50%; width: 20px; height: 20px;
+        border: 2px solid yellow; border-radius: 50%; transform: translate(-50%, -50%);
+        z-index: 500; pointer-events: none;
+      }
+    </style>
   </head>
 
   <body style="margin: 0; overflow: hidden;">
-    <!-- vr-mode-ui="enabled: false" отключает кнопку VR, так как это AR -->
-    <!-- gps-camera-debug поможет увидеть направление на объект -->
+    
+    <!-- Интерфейс HTML -->
+    <div id="ui-container">
+      <button id="start-btn">ВКЛЮЧИТЬ AR СЕНСОРЫ</button>
+    </div>
+    <div id="score-display">Ожидание GPS...</div>
+    <div class="crosshair"></div>
+
+    <!-- Сцена AR. Запрашиваем веб-камеру -->
     <a-scene 
       vr-mode-ui="enabled: false"
       embedded
-      arjs="sourceType: webcam; debugUIEnabled: false;">
+      arjs="sourceType: webcam; debugUIEnabled: false;"
+      ar-game-logic>
 
-      <a-assets>
-        <a-asset-item id="turret" src="assets/turel.glb"></a-asset-item>
-      </a-assets>
+      <a-camera gps-camera rotation-reader>
+        <!-- Встроенный прицел для взаимодействия с .clickable объектами -->
+        <a-entity cursor="rayOrigin: mouse; fuse: false" raycaster="objects: .clickable"></a-entity>
+      </a-camera>
 
-      <!-- 
-        GPS ОБЪЕКТ: 
-        Замени latitude и longitude на координаты своего дома (можно взять из Google Maps).
-        Когда ты придешь в эту точку и наведешь камеру, ты увидишь свою турель в небе!
-      -->
-      <a-entity 
-        gltf-model="#turret"
-        scale="1 1 1"
-        gps-entity-place="latitude: 55.7558; longitude: 37.6173;" 
-        animation="property: rotation; to: 0 360 0; loop: true; dur: 10000">
-      </a-entity>
-
-      <!-- Текст, который всегда показывает расстояние до объекта -->
-      <a-text id="distanceText" value="Looking for GPS signal..." look-at="[gps-camera]" scale="5 5 5" gps-entity-place="latitude: 55.7558; longitude: 37.6173;" position="0 10 0"></a-text>
-
-      <!-- Специальная камера для AR + GPS -->
-      <a-camera gps-camera rotation-reader></a-camera>
     </a-scene>
   </body>
 </html>
