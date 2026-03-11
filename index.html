@@ -25,8 +25,8 @@
         },
         spawnEnemy: function () {
           let enemy = document.createElement('a-sphere');
-          let posX = (Math.random() - 0.5) * 20; // Случайно от -10 до 10
-          enemy.setAttribute('class', 'enemy');
+          let posX = (Math.random() - 0.5) * 20; 
+          enemy.setAttribute('class', 'enemy'); // Обязательно класс enemy для прицела
           enemy.setAttribute('color', 'red');
           enemy.setAttribute('radius', '0.7');
           enemy.setAttribute('position', posX + ' 15 -15');
@@ -36,37 +36,64 @@
         }
       });
 
-      // 2. Логика уничтожения
+      // 2. Логика врагов (Проверка падения)
       AFRAME.registerComponent('enemy-logic', {
-        init: function () {
-          this.el.addEventListener('click', () => {
-            if (!gameActive) return;
-            score++;
-            document.querySelector('#scoreText').setAttribute('value', 'Score: ' + score);
-            this.el.parentNode.removeChild(this.el);
-          });
-          
-          // Проверка падения на землю
-          this.el.addEventListener('collide', (e) => {
-            if (e.detail.body.el.id === 'ground') {
-              gameActive = false;
-              document.querySelector('#gameOverText').setAttribute('visible', true);
-            }
-          });
+        tick: function () {
+          if (!gameActive) return;
+          // Надежная проверка: если шарик опустился ниже Y = 0.5 (коснулся земли)
+          if (this.el.object3D.position.y <= 0.5) {
+            gameActive = false;
+            document.querySelector('#gameOverText').setAttribute('visible', true);
+          }
         }
       });
 
-      // 3. Поворот турели за камерой
-      AFRAME.registerComponent('look-at-mouse', {
+      // 3. НОВАЯ ЛОГИКА СТРЕЛЬБЫ: Тап в любом месте экрана
+      AFRAME.registerComponent('shooter', {
+        init: function () {
+          // Слушаем клик мыши (для ПК) и касание экрана (для телефона)
+          window.addEventListener('mousedown', this.shoot.bind(this));
+          window.addEventListener('touchstart', this.shoot.bind(this));
+        },
+        shoot: function () {
+          if (!gameActive) return;
+          
+          // Получаем список объектов, на которые сейчас смотрит прицел
+          let raycaster = document.querySelector('#cursor').components.raycaster;
+          let intersected = raycaster.intersectedEls;
+
+          // Если в прицеле есть хоть один объект
+          if (intersected.length > 0) {
+            let target = intersected[0]; // Берем первый объект
+            
+            // Проверяем, враг ли это
+            if (target.classList.contains('enemy')) {
+              score++;
+              document.querySelector('#scoreText').setAttribute('value', 'Score: ' + score);
+              // Удаляем сбитый шарик
+              target.parentNode.removeChild(target);
+            }
+          }
+        }
+      });
+
+      // 4. ИСПРАВЛЕННЫЙ поворот турели (Синхронизация с гироскопом)
+      AFRAME.registerComponent('sync-rotation', {
         tick: function () {
-          let cameraRot = document.querySelector('#camera').getAttribute('rotation');
-          this.el.setAttribute('rotation', `0 ${cameraRot.y} 0`);
+          let cameraEl = document.querySelector('#camera');
+          if (cameraEl) {
+            // Читаем поворот камеры напрямую из 3D-движка (это работает на телефонах)
+            let cameraRotationY = cameraEl.object3D.rotation.y;
+            // Применяем этот поворот к турели
+            this.el.object3D.rotation.y = cameraRotationY;
+          }
         }
       });
     </script>
   </head>
   <body>
-    <a-scene physics="debug: false" spawner>
+    <!-- Добавлен компонент shooter на всю сцену -->
+    <a-scene physics="debug: false" spawner shooter>
       
       <a-assets>
         <img id="space-texture" src="assets/space.jpg">
@@ -76,26 +103,35 @@
 
       <a-sky src="#space-texture"></a-sky>
 
-      <!-- ЗЕМЛЯ с ID для отслеживания столкновений -->
-      <a-plane id="ground" static-body rotation="-90 0 0" width="100" height="100" opacity="0.2" color="blue"></a-plane>
+      <!-- ИСПРАВЛЕННЫЙ ПОЛ: Теперь это толстый непрозрачный ящик темно-серого цвета -->
+      <!-- Высота 2, позиция -1 означает, что его "поверхность" находится на уровне 0 -->
+      <a-box id="ground" static-body position="0 -1 0" width="100" height="2" depth="100" color="#222222"></a-box>
 
-      <!-- ТУРЕЛЬ с компонентом слежения -->
+      <!-- ТУРЕЛЬ: Изменен компонент на sync-rotation -->
       <a-entity id="player-turret" 
                 gltf-model="#turret-model" 
                 position="0 0 -2" 
                 scale="0.3 0.3 0.3" 
-                look-at-mouse>
+                sync-rotation>
         <a-text id="scoreText" value="Score: 0" position="0 8 0" align="center" color="cyan" width="20"></a-text>
       </a-entity>
 
-      <!-- ТЕКСТ ЗАВЕРШЕНИЯ ИГРЫ (скрыт в начале) -->
+      <!-- ТЕКСТ ЗАВЕРШЕНИЯ ИГРЫ -->
       <a-entity id="gameOverText" visible="false" position="0 2 -4">
         <a-text value="GAME OVER" color="red" align="center" width="10"></a-text>
         <a-image src="#result-img" position="0 -1 0"></a-image>
       </a-entity>
 
+      <!-- КАМЕРА И ПРИЦЕЛ -->
       <a-entity id="camera" camera look-controls position="0 1.6 0">
-        <a-cursor color="yellow"></a-cursor>
+        <!-- Настроили прицел так, чтобы он "видел" только объекты с классом enemy -->
+        <a-entity id="cursor" 
+                  cursor="rayOrigin: entity; fuse: false"
+                  raycaster="objects: .enemy"
+                  position="0 0 -1"
+                  geometry="primitive: ring; radiusInner: 0.02; radiusOuter: 0.03"
+                  material="color: yellow; shader: flat">
+        </a-entity>
       </a-entity>
 
       <a-entity light="type: ambient; intensity: 0.7"></a-entity>
