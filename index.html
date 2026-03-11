@@ -3,22 +3,45 @@
   <head>
     <meta charset="utf-8">
     <title>Space Defense - Full Game</title>
+    <!-- Основная библиотека A-Frame -->
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <!-- Физика -->
     <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-physics-system@v4.2.2/dist/aframe-physics-system.min.js"></script>
     
     <script>
-      let score = 0;
-      let gameActive = true;
+      // Глобальные переменные состояния игры
+      window.gameState = 'menu'; // Может быть: 'menu', 'playing', 'gameover'
+      window.score = 0;
 
-      // 1. Компонент для создания врагов
+      // Функция начала / перезапуска игры
+      window.startGame = function() {
+        window.gameState = 'playing';
+        window.score = 0;
+        document.querySelector('#scoreText').setAttribute('value', 'Score: 0');
+        
+        // Прячем меню
+        document.querySelector('#startMenu').setAttribute('position', '0 -100 0');
+        document.querySelector('#gameOverMenu').setAttribute('position', '0 -100 0');
+        
+        // Удаляем все старые шарики, если они остались
+        let enemies = document.querySelectorAll('.enemy');
+        enemies.forEach(el => el.parentNode.removeChild(el));
+      }
+
+      // Функция проигрыша
+      window.endGame = function() {
+        window.gameState = 'gameover';
+        // Показываем меню проигрыша перед игроком
+        document.querySelector('#gameOverMenu').setAttribute('position', '0 2 -4');
+      }
+
+      // 1. Спавнер врагов (Работает только когда gameState === 'playing')
       AFRAME.registerComponent('spawner', {
-        init: function () {
-          this.timer = 0;
-        },
+        init: function () { this.timer = 0; },
         tick: function (time, timeDelta) {
-          if (!gameActive) return;
+          if (window.gameState !== 'playing') return;
           this.timer += timeDelta;
-          if (this.timer > 2000) { // Каждые 2 секунды
+          if (this.timer > 1500) { // Каждые 1.5 секунды
             this.spawnEnemy();
             this.timer = 0;
           }
@@ -26,114 +49,146 @@
         spawnEnemy: function () {
           let enemy = document.createElement('a-sphere');
           let posX = (Math.random() - 0.5) * 20; 
-          enemy.setAttribute('class', 'enemy'); // Обязательно класс enemy для прицела
+          enemy.setAttribute('class', 'enemy'); 
           enemy.setAttribute('color', 'red');
-          enemy.setAttribute('radius', '0.7');
+          enemy.setAttribute('radius', '1.2'); // УВЕЛИЧИЛИ РАЗМЕР
           enemy.setAttribute('position', posX + ' 15 -15');
-          enemy.setAttribute('dynamic-body', 'shape: sphere');
+          enemy.setAttribute('dynamic-body', 'shape: sphere; mass: 2');
           enemy.setAttribute('enemy-logic', '');
           this.el.sceneEl.appendChild(enemy);
         }
       });
 
-      // 2. Логика врагов (Проверка падения)
+      // 2. Логика врагов (Проверка столкновения с полом)
       AFRAME.registerComponent('enemy-logic', {
         tick: function () {
-          if (!gameActive) return;
-          // Надежная проверка: если шарик опустился ниже Y = 0.5 (коснулся земли)
-          if (this.el.object3D.position.y <= 0.5) {
-            gameActive = false;
-            document.querySelector('#gameOverText').setAttribute('visible', true);
+          if (window.gameState !== 'playing') return;
+          
+          // Пол находится на Y=0. Радиус шара 1.2. 
+          // Если центр шара опустился ниже 1.3 - значит он упал.
+          if (this.el.object3D.position.y <= 1.3) {
+            window.endGame();
           }
         }
       });
 
-      // 3. НОВАЯ ЛОГИКА СТРЕЛЬБЫ: Тап в любом месте экрана
+      // 3. Универсальный контроллер (Стрельба и нажатие кнопок)
       AFRAME.registerComponent('shooter', {
         init: function () {
-          // Слушаем клик мыши (для ПК) и касание экрана (для телефона)
-          window.addEventListener('mousedown', this.shoot.bind(this));
-          window.addEventListener('touchstart', this.shoot.bind(this));
+          // Реагируем и на клик мышью, и на тап по экрану
+          window.addEventListener('mousedown', this.action.bind(this));
+          window.addEventListener('touchstart', this.action.bind(this));
         },
-        shoot: function () {
-          if (!gameActive) return;
-          
-          // Получаем список объектов, на которые сейчас смотрит прицел
+        action: function (e) {
+          // Получаем луч прицела
           let raycaster = document.querySelector('#cursor').components.raycaster;
           let intersected = raycaster.intersectedEls;
 
-          // Если в прицеле есть хоть один объект
+          // ЗВУК И АНИМАЦИЯ (Отдача турели)
+          let turret = document.querySelector('#player-turret');
+          if (turret.components.sound) turret.components.sound.playSound();
+          turret.emit('fire'); // Запускаем анимацию отдачи
+
+          // Если мы куда-то попали лучом
           if (intersected.length > 0) {
-            let target = intersected[0]; // Берем первый объект
-            
-            // Проверяем, враг ли это
-            if (target.classList.contains('enemy')) {
-              score++;
-              document.querySelector('#scoreText').setAttribute('value', 'Score: ' + score);
-              // Удаляем сбитый шарик
+            let target = intersected[0];
+
+            // Если попали во врага во время игры
+            if (target.classList.contains('enemy') && window.gameState === 'playing') {
+              window.score++;
+              document.querySelector('#scoreText').setAttribute('value', 'Score: ' + window.score);
               target.parentNode.removeChild(target);
+            }
+            
+            // Если попали в интерфейс (Кнопка START)
+            if (target.id === 'btn-start' && window.gameState === 'menu') {
+              window.startGame();
+            }
+
+            // Если попали в интерфейс (Кнопка RESTART)
+            if (target.id === 'btn-restart' && window.gameState === 'gameover') {
+              window.startGame();
             }
           }
         }
       });
 
-      // 4. ИСПРАВЛЕННЫЙ поворот турели (Синхронизация с гироскопом)
+      // 4. Идеальный поворот турели для мобилок (Использование Кватернионов)
       AFRAME.registerComponent('sync-rotation', {
         tick: function () {
-          let cameraEl = document.querySelector('#camera');
-          if (cameraEl) {
-            // Читаем поворот камеры напрямую из 3D-движка (это работает на телефонах)
-            let cameraRotationY = cameraEl.object3D.rotation.y;
-            // Применяем этот поворот к турели
-            this.el.object3D.rotation.y = cameraRotationY;
-          }
+          let camera3D = document.querySelector('#camera').object3D;
+          // Извлекаем чистый угол поворота по оси Y из гироскопа
+          let euler = new THREE.Euler().setFromQuaternion(camera3D.quaternion, 'YXZ');
+          // Применяем к турели
+          this.el.object3D.rotation.y = euler.y;
         }
       });
     </script>
   </head>
   <body>
-    <!-- Добавлен компонент shooter на всю сцену -->
+    <!-- Подключаем спавнер и стрелка на всю сцену -->
     <a-scene physics="debug: false" spawner shooter>
       
       <a-assets>
         <img id="space-texture" src="assets/space.jpg">
         <a-asset-item id="turret-model" src="assets/turel.glb"></a-asset-item>
-        <img id="result-img" src="https://img.icons8.com/clouds/500/000000/trophy.png">
+        <!-- ОБЯЗАТЕЛЬНО ПОЛОЖИ ФАЙЛ shoot.mp3 В ПАПКУ assets -->
+        <audio id="snd-shoot" src="assets/shoot.mp3" preload="auto"></audio>
       </a-assets>
 
       <a-sky src="#space-texture"></a-sky>
 
-      <!-- ИСПРАВЛЕННЫЙ ПОЛ: Теперь это толстый непрозрачный ящик темно-серого цвета -->
-      <!-- Высота 2, позиция -1 означает, что его "поверхность" находится на уровне 0 -->
-      <a-box id="ground" static-body position="0 -1 0" width="100" height="2" depth="100" color="#222222"></a-box>
+      <!-- ПОЛ (Темный, толстый ящик. Больше никаких провалов текстур) -->
+      <a-box id="ground" static-body position="0 -1 0" width="100" height="2" depth="100" color="#111111"></a-box>
 
-      <!-- ТУРЕЛЬ: Изменен компонент на sync-rotation -->
+      <!-- ТУРЕЛЬ -->
+      <!-- sound: проигрывает звук выстрела (poolSize позволяет звукам накладываться) -->
+      <!-- animation__recoil: Анимация отдачи турели по событию "fire" -->
       <a-entity id="player-turret" 
                 gltf-model="#turret-model" 
                 position="0 0 -2" 
                 scale="0.3 0.3 0.3" 
-                sync-rotation>
+                sync-rotation
+                sound="src: #snd-shoot; poolSize: 5; volume: 1"
+                animation__recoil="property: position; from: 0 0 -2; to: 0 0 -1.8; dur: 50; dir: alternate; repeat: 1; startEvents: fire">
+        
+        <!-- Текст счета над турелью -->
         <a-text id="scoreText" value="Score: 0" position="0 8 0" align="center" color="cyan" width="20"></a-text>
       </a-entity>
 
-      <!-- ТЕКСТ ЗАВЕРШЕНИЯ ИГРЫ -->
-      <a-entity id="gameOverText" visible="false" position="0 2 -4">
-        <a-text value="GAME OVER" color="red" align="center" width="10"></a-text>
-        <a-image src="#result-img" position="0 -1 0"></a-image>
+
+      <!-- ИНТЕРФЕЙС: МЕНЮ СТАРТА (Видимо сразу) -->
+      <a-entity id="startMenu" position="0 2 -4">
+        <a-text value="SPACE DEFENSE" color="cyan" align="center" width="12" position="0 1 0"></a-text>
+        <a-plane id="btn-start" class="clickable" color="#00FF00" width="3" height="1" position="0 -0.5 0"
+                 animation="property: scale; to: 1.05 1.05 1.05; dir: alternate; dur: 800; loop: true">
+          <a-text value="START GAME" color="black" align="center" width="8" position="0 0 0.1"></a-text>
+        </a-plane>
       </a-entity>
+
+
+      <!-- ИНТЕРФЕЙС: МЕНЮ ПРОИГРЫША (Спрятано под землю по умолчанию) -->
+      <a-entity id="gameOverMenu" position="0 -100 0">
+        <a-text value="GAME OVER!" color="red" align="center" width="15" position="0 1 0"></a-text>
+        <a-plane id="btn-restart" class="clickable" color="#FF0000" width="3" height="1" position="0 -0.5 0">
+          <a-text value="RESTART" color="white" align="center" width="8" position="0 0 0.1"></a-text>
+        </a-plane>
+      </a-entity>
+
 
       <!-- КАМЕРА И ПРИЦЕЛ -->
       <a-entity id="camera" camera look-controls position="0 1.6 0">
-        <!-- Настроили прицел так, чтобы он "видел" только объекты с классом enemy -->
+        <!-- Прицел реагирует на врагов (.enemy) и на кнопки интерфейса (.clickable) -->
         <a-entity id="cursor" 
                   cursor="rayOrigin: entity; fuse: false"
-                  raycaster="objects: .enemy"
+                  raycaster="objects: .enemy, .clickable"
                   position="0 0 -1"
                   geometry="primitive: ring; radiusInner: 0.02; radiusOuter: 0.03"
                   material="color: yellow; shader: flat">
         </a-entity>
       </a-entity>
 
+      <!-- Свет -->
       <a-entity light="type: ambient; intensity: 0.7"></a-entity>
       <a-entity light="type: directional; intensity: 1" position="1 4 3"></a-entity>
 
