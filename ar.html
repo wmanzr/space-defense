@@ -386,7 +386,7 @@
           '<a-entity id="ar-camera" camera look-controls="enabled: true" arjs-look-controls="enabled: true" position="0 0 0">' +
             '<a-entity id="ar-cursor"' +
               ' cursor="rayOrigin: entity; fuse: false"' +
-              ' raycaster="objects: .dragon; far: 300"' +
+              ' raycaster="objects: .enemy; far: 50"' +
               ' position="0 0 -1"' +
               ' geometry="primitive: ring; radiusInner: 0.015; radiusOuter: 0.025"' +
               ' material="color: yellow; shader: flat; opacity: 0">' +
@@ -396,8 +396,8 @@
         wrapper.appendChild(scene);
 
         scene.addEventListener('loaded', function() {
-          spawnDragons(lat, lon);
-        });
+        startBallSpawner();
+      });
       }
 
       // ── Смещение метров в градусы ──
@@ -407,54 +407,49 @@
         return { lat: lat + dLat, lon: lon + dLon };
       }
 
-      // ── Спавн драконов ──
-      function spawnDragons(lat, lon) {
-  if (GAME.dragonsSpawned) return;
-  GAME.dragonsSpawned = true;
+      var ballSpawnerInterval = null;
 
-  // Позиции в метрах прямо вокруг игрока (x, y, z)
-  // x = право/лево, y = высота, z = вперёд/назад (минус = вперёд)
-  var positions = [
-    { x:   0, y: 1, z: -20 },   // прямо впереди
-    { x: -15, y: 1, z:  10 },   // слева сзади
-    { x:  15, y: 1, z:  10 }    // справа сзади
-  ];
+function startBallSpawner() {
+  if (ballSpawnerInterval) clearInterval(ballSpawnerInterval);
+  ballSpawnerInterval = setInterval(function() {
+    if (GAME.state !== 'playing') return;
+    spawnBall();
+  }, 1500);
+}
 
+function spawnBall() {
   var scene = document.getElementById('ar-scene');
+  if (!scene) return;
 
-  positions.forEach(function(pos, i) {
-    var d = document.createElement('a-entity');
-    d.setAttribute('id', 'dragon-' + i);
-    d.setAttribute('class', 'dragon');
-    d.setAttribute('gltf-model', 'assets/dragon.glb');
-    d.setAttribute('scale', '3 3 3');
-    d.setAttribute('position', pos.x + ' ' + pos.y + ' ' + pos.z);
-    d.setAttribute('visible', 'true');
-    d.setAttribute('animation__hover',
-      'property: position; ' +
-      'from: ' + pos.x + ' ' + pos.y + ' ' + pos.z + '; ' +
-      'to: '   + pos.x + ' ' + (pos.y + 1) + ' ' + pos.z + '; ' +
-      'dir: alternate; dur: 1400; loop: true; easing: easeInOutSine');
-    d.setAttribute('animation__rotate',
-      'property: rotation; from: 0 0 0; to: 0 360 0; dur: 9000; loop: true; easing: linear');
+  // Случайная позиция по x перед игроком, высоко над головой
+  var x = (Math.random() - 0.5) * 10;  // от -5 до +5
+  var ball = document.createElement('a-sphere');
+  var id = 'ball-' + Date.now() + '-' + Math.floor(Math.random()*1000);
+  ball.setAttribute('id', id);
+  ball.setAttribute('class', 'enemy');
+  ball.setAttribute('color', '#ff3333');
+  ball.setAttribute('radius', '0.5');
+  ball.setAttribute('position', x + ' 12 -8');
+  ball.setAttribute('visible', 'true');
+  ball.setAttribute('shadow', '');
 
-    // Отладочный маркер — красный шар + текст
-    var ball = document.createElement('a-sphere');
-    ball.setAttribute('color', 'red');
-    ball.setAttribute('radius', '1');
-    ball.setAttribute('position', '0 3 0');
-    d.appendChild(ball);
+  // Анимация падения вниз
+  ball.setAttribute('animation__fall',
+    'property: position;' +
+    'from: ' + x + ' 12 -8;' +
+    'to: '   + x + ' -3 -8;' +
+    'dur: 3000; easing: easeInQuad; loop: false');
 
-    var label = document.createElement('a-text');
-    label.setAttribute('value', 'DRAGON ' + i);
-    label.setAttribute('position', '0 5 0');
-    label.setAttribute('color', 'yellow');
-    label.setAttribute('scale', '8 8 8');
-    label.setAttribute('align', 'center');
-    d.appendChild(label);
+  scene.appendChild(ball);
 
-    scene.appendChild(d);
-  });
+  // Удаляем шар если долетел до низа — game over
+  setTimeout(function() {
+    var b = document.getElementById(id);
+    if (b && GAME.state === 'playing') {
+      if (b.parentNode) b.parentNode.removeChild(b);
+      endGame();
+    }
+  }, 3100);
 }
 
       // ── Стрельба ──
@@ -484,24 +479,36 @@
         var cursor = document.querySelector('#ar-cursor');
         if (!cursor || !cursor.components.raycaster) return;
         var hits = cursor.components.raycaster.intersectedEls;
-        if (hits.length > 0 && hits[0].classList.contains('dragon')) {
-          killDragon(hits[0]);
+        if (hits.length > 0 && hits[0].classList.contains('enemy')) {
+          killBall(hits[0]);
         }
       }
 
-      function killDragon(el) {
-        el.setAttribute('animation__die', 'property: scale; to: 0 0 0; dur: 300; easing: easeInBack');
-        setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 350);
-        GAME.killed++;
-        GAME.score += 100;
-        updateScore();
-        if (GAME.killed >= GAME.total) setTimeout(showWin, 500);
-      }
+      function killBall(el) {
+  el.setAttribute('animation__die', 'property: scale; to: 0 0 0; dur: 200; easing: easeInBack');
+  setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+  GAME.score += 10;
+  updateScore();
+}
 
       function updateScore() {
         var el = document.getElementById('score-display');
-        if (el) el.textContent = '🐉 ' + GAME.killed + ' / ' + GAME.total + '   SCORE: ' + GAME.score;
-      }
+  if (el) el.textContent = 'SCORE: ' + GAME.score; }
+
+function endGame() {
+  if (GAME.state !== 'playing') return;
+  GAME.state = 'gameover';
+  if (ballSpawnerInterval) { clearInterval(ballSpawnerInterval); ballSpawnerInterval = null; }
+  // Убираем все шары
+  document.querySelectorAll('.enemy').forEach(function(b){
+    if (b.parentNode) b.parentNode.removeChild(b);
+  });
+  // Показываем финальный счёт на экране победы (переиспользуем)
+  document.getElementById('win-score-text').textContent = 'SCORE: ' + GAME.score;
+  document.getElementById('screen-win').querySelector('h1').textContent = '💥 GAME OVER';
+  document.getElementById('screen-win').style.display = 'flex';
+}
+
 
       function showWin() {
         GAME.state = 'win';
@@ -510,7 +517,8 @@
       }
 
       function restartGame() {
-        document.querySelectorAll('.dragon').forEach(function(el){
+        if (ballSpawnerInterval) { clearInterval(ballSpawnerInterval); ballSpawnerInterval = null; }
+        document.querySelectorAll('.enemy').forEach(function(el){
           if (el.parentNode) el.parentNode.removeChild(el);
         });
         GAME.state = 'menu';
