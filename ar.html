@@ -3,7 +3,6 @@
   <head>
     <meta charset="utf-8">
     <title>AR GPS Defense</title>
-    <!-- Официальные библиотеки -->
     <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
@@ -11,7 +10,7 @@
       window.score = 0;
       let enemiesSpawned = false;
 
-      // 1. КОМПОНЕНТ СТРЕЛЬБЫ (Надежный перехват тапов по экрану)
+      // 1. КОМПОНЕНТ СТРЕЛЬБЫ
       AFRAME.registerComponent('shooter', {
         init: function () {
           window.addEventListener('touchstart', this.shoot.bind(this));
@@ -19,7 +18,7 @@
         },
         shoot: function () {
           let turret = document.querySelector('#player-turret');
-          if(turret) turret.emit('fire'); // Анимация выстрела
+          if(turret) turret.emit('fire');
 
           let raycaster = document.querySelector('#cursor').components.raycaster;
           let intersected = raycaster.intersectedEls;
@@ -42,7 +41,7 @@
         }
       });
 
-      // 2. УМНЫЙ МЕНЕДЖЕР AR
+      // 2. БЫСТРЫЙ МЕНЕДЖЕР AR
       AFRAME.registerComponent('ar-manager', {
         init: function () {
           let startBtn = document.getElementById('start-btn');
@@ -50,46 +49,49 @@
           let infoText = document.querySelector('#infoText');
 
           startBtn.addEventListener('click', () => {
-            // ШАГ 1: Разблокировка гироскопа (Apple требует клика)
-            // Если разрешение уже дано ранее, окно не появится, код просто пойдет дальше - это НОРМАЛЬНО.
+            startBtn.innerText = "РАСЧЕТ КООРДИНАТ...";
+
+            // 1. Гироскоп (Для Apple)
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
               DeviceOrientationEvent.requestPermission().then(state => {
-                if (state === 'granted') startGame();
-                else alert("Для работы AR нужен гироскоп!");
+                if (state === 'granted') fastGPS();
+                else alert("Для AR нужен гироскоп!");
               }).catch(console.error);
             } else {
-              startGame(); // Для Android или старых iOS
+              fastGPS();
             }
 
-            function startGame() {
-              // Прячем меню
-              uiOverlay.style.display = 'none';
-              
-              // Меняем текст на экране
-              infoText.setAttribute('value', 'ИЩУ СПУТНИКИ GPS...\nПОДОЙДИТЕ К ОКНУ');
+            // 2. Мгновенное получение "грубых" координат
+            function fastGPS() {
+              navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                  // Прячем меню
+                  uiOverlay.style.display = 'none';
+                  infoText.setAttribute('value', 'ВРАГИ ОБНАРУЖЕНЫ!');
 
-              // ШАГ 2: Слушаем саму библиотеку AR.js
-              // Она сама получит координаты телефона. Мы просто ждем ее сигнала.
-              window.addEventListener('gps-camera-update-position', function (e) {
-                // Если мы уже создали врагов, больше не создаем
-                if (enemiesSpawned) return;
-                enemiesSpawned = true;
+                  // Берем любые координаты, которые выдал телефон (даже примерные)
+                  let lat = pos.coords.latitude;
+                  let lon = pos.coords.longitude;
+                  let offset = 0.00005; // Смещение на ~5 метров
 
-                infoText.setAttribute('value', 'ВРАГИ ОБНАРУЖЕНЫ!');
-
-                // Берем координаты, которые нашел AR.js
-                let lat = e.detail.position.latitude;
-                let lon = e.detail.position.longitude;
-                let offset = 0.00005; // Радиус спавна около 5 метров
-
-                // Создаем 3 дракона (сферы) вокруг
-                spawnEnemy(lat + offset, lon); 
-                spawnEnemy(lat, lon + offset); 
-                spawnEnemy(lat - offset, lon - offset); 
-              });
+                  // Спавним врагов
+                  if (!enemiesSpawned) {
+                    enemiesSpawned = true;
+                    spawnEnemy(lat + offset, lon); 
+                    spawnEnemy(lat, lon + offset); 
+                    spawnEnemy(lat - offset, lon - offset); 
+                  }
+                },
+                (err) => {
+                  alert("Не удалось определить местоположение. Проверьте включен ли GPS.");
+                  startBtn.innerText = "ПОВТОРИТЬ";
+                },
+                // СЕКРЕТ ЗДЕСЬ: enableHighAccuracy: false позволяет получить координаты
+                // по Wi-Fi за долю секунды, не дожидаясь ответа от спутников!
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+              );
             }
 
-            // Функция отрисовки врагов в реальном мире
             function spawnEnemy(lat, lon) {
               let scene = document.querySelector('a-scene');
               let enemy = document.createElement('a-entity');
@@ -97,11 +99,8 @@
               enemy.setAttribute('geometry', 'primitive: sphere; radius: 1.5');
               enemy.setAttribute('material', 'color: purple');
               enemy.setAttribute('class', 'enemy');
-              
-              // Привязка к физическим координатам планеты Земля
               enemy.setAttribute('gps-entity-place', `latitude: ${lat}; longitude: ${lon}`);
-              // Высота над землей (2 метра)
-              enemy.setAttribute('position', '0 2 0');
+              enemy.setAttribute('position', '0 2 0'); // Высота 2 метра
               
               scene.appendChild(enemy);
             }
@@ -120,26 +119,24 @@
       #start-btn {
         padding: 20px 40px; font-size: 20px; font-weight: bold;
         background-color: #00FF00; border: none; border-radius: 10px; cursor: pointer;
-        margin-top: 20px;
+        margin-top: 20px; box-shadow: 0 4px 10px rgba(0,255,0,0.5);
       }
       .warning { color: white; padding: 0 20px; font-size: 18px; }
-      /* Скрываем кривое окно "Author permission" от AR.js, чтобы оно не мозолило глаза */
       .a-enter-vr { display: none !important; }
     </style>
   </head>
 
   <body style="margin: 0; overflow: hidden;">
     
-    <!-- Стартовое меню-оверлей -->
     <div id="ui-overlay">
       <div class="warning">
         <h2>AR РАДАР</h2>
-        <p>1. Нажмите "Начать".<br>2. Разрешите использование камеры и геолокации (если телефон спросит).<br>3. Смотрите по сторонам.</p>
+        <p>Наведите камеру вокруг себя, чтобы найти цели.</p>
       </div>
       <button id="start-btn">НАЧАТЬ</button>
     </div>
 
-    <!-- СЦЕНА -->
+    <!-- arjs-сцена -->
     <a-scene 
       vr-mode-ui="enabled: false"
       embedded
@@ -151,16 +148,13 @@
       </a-assets>
 
       <!-- 
-        КАМЕРА: Самое важное исправление! 
-        positionMinAccuracy: 3000 позволяет принять даже ужасный сигнал GPS в квартире.
-        В противном случае AR.js просто игнорирует сигнал и загрузка идет бесконечно.
+        GPS-CAMERA с максимальным уровнем "терпимости" к плохим координатам 
+        (positionMinAccuracy: 100000 - пустит даже погрешность в 100 км!)
       -->
-      <a-camera id="main-camera" gps-camera="positionMinAccuracy: 3000;" rotation-reader>
+      <a-camera id="main-camera" gps-camera="positionMinAccuracy: 100000;" rotation-reader>
         
-        <!-- Текст статуса в центре экрана -->
         <a-text id="infoText" value="" position="0 0.5 -3" align="center" color="yellow" width="3"></a-text>
 
-        <!-- Прицел -->
         <a-entity id="cursor" 
                   cursor="rayOrigin: entity; fuse: false"
                   raycaster="objects: .enemy"
@@ -169,7 +163,6 @@
                   material="color: red; shader: flat">
         </a-entity>
 
-        <!-- Турель -->
         <a-entity id="player-turret" 
                   gltf-model="#turret-model" 
                   position="0 -1 -1.5" 
