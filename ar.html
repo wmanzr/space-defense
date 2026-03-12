@@ -409,44 +409,53 @@
 
       // ── Спавн драконов ──
       function spawnDragons(lat, lon) {
-        if (GAME.dragonsSpawned) return;
-        GAME.dragonsSpawned = true;
+  if (GAME.dragonsSpawned) return;
+  GAME.dragonsSpawned = true;
 
-        var offsets = [
-          { north:  15, east:   0 },
-          { north: -10, east: -12 },
-          { north: -10, east:  12 }
-        ];
+  // Позиции в метрах прямо вокруг игрока (x, y, z)
+  // x = право/лево, y = высота, z = вперёд/назад (минус = вперёд)
+  var positions = [
+    { x:   0, y: 1, z: -20 },   // прямо впереди
+    { x: -15, y: 1, z:  10 },   // слева сзади
+    { x:  15, y: 1, z:  10 }    // справа сзади
+  ];
 
-        var scene = document.getElementById('ar-scene');
-        offsets.forEach(function(off, i) {
-          var pos = offsetLatLon(lat, lon, off.north, off.east);
-          var d = document.createElement('a-entity');
-          d.setAttribute('id', 'dragon-' + i);
-          d.setAttribute('class', 'dragon');
-          d.setAttribute('gltf-model', 'assets/dragon.glb');
-          d.setAttribute('scale', '20 20 20');
-          d.setAttribute('gps-entity-place', 'latitude: ' + pos.lat + '; longitude: ' + pos.lon);
-          d.setAttribute('visible', 'true');
-          d.setAttribute('look-at', '[gps-camera]');
-          d.setAttribute('position', '0 2 0');
-          d.setAttribute('animation__hover',
-            'property: position; from: 0 0 0; to: 0 0.6 0; dir: alternate; dur: 1400; loop: true; easing: easeInOutSine');
-          d.setAttribute('animation__rotate',
-            'property: rotation; from: 0 0 0; to: 0 360 0; dur: 9000; loop: true; easing: linear');
+  var scene = document.getElementById('ar-scene');
 
-            // Текст маркер (убери когда всё заработает)
-            var label = document.createElement('a-text');
-            label.setAttribute('value', 'DRAGON ' + i);
-            label.setAttribute('position', '0 3 0');
-            label.setAttribute('color', 'red');
-            label.setAttribute('scale', '10 10 10');
-            label.setAttribute('align', 'center');
-            d.appendChild(label);
+  positions.forEach(function(pos, i) {
+    var d = document.createElement('a-entity');
+    d.setAttribute('id', 'dragon-' + i);
+    d.setAttribute('class', 'dragon');
+    d.setAttribute('gltf-model', 'assets/dragon.glb');
+    d.setAttribute('scale', '3 3 3');
+    d.setAttribute('position', pos.x + ' ' + pos.y + ' ' + pos.z);
+    d.setAttribute('visible', 'true');
+    d.setAttribute('animation__hover',
+      'property: position; ' +
+      'from: ' + pos.x + ' ' + pos.y + ' ' + pos.z + '; ' +
+      'to: '   + pos.x + ' ' + (pos.y + 1) + ' ' + pos.z + '; ' +
+      'dir: alternate; dur: 1400; loop: true; easing: easeInOutSine');
+    d.setAttribute('animation__rotate',
+      'property: rotation; from: 0 0 0; to: 0 360 0; dur: 9000; loop: true; easing: linear');
 
-          scene.appendChild(d);
-        });
-      }
+    // Отладочный маркер — красный шар + текст
+    var ball = document.createElement('a-sphere');
+    ball.setAttribute('color', 'red');
+    ball.setAttribute('radius', '1');
+    ball.setAttribute('position', '0 3 0');
+    d.appendChild(ball);
+
+    var label = document.createElement('a-text');
+    label.setAttribute('value', 'DRAGON ' + i);
+    label.setAttribute('position', '0 5 0');
+    label.setAttribute('color', 'yellow');
+    label.setAttribute('scale', '8 8 8');
+    label.setAttribute('align', 'center');
+    d.appendChild(label);
+
+    scene.appendChild(d);
+  });
+}
 
       // ── Стрельба ──
       document.addEventListener('click', function(e) {
