@@ -2,175 +2,522 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>AR GPS Defense</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <title>Space Defense AR</title>
+
+    <!-- AR.js + A-Frame (версии совместимые друг с другом) -->
     <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { overflow: hidden; font-family: 'Courier New', monospace; }
+
+      /* HUD — поверх canvas A-Frame */
+      #hud {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        pointer-events: none;
+        z-index: 999;
+      }
+
+      /* Прицел */
+      #crosshair {
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: 44px; height: 44px;
+      }
+      #crosshair::before, #crosshair::after {
+        content: '';
+        position: absolute;
+        background: rgba(255, 220, 0, 0.9);
+        border-radius: 2px;
+      }
+      #crosshair::before { width: 2px; height: 100%; top: 0; left: 50%; transform: translateX(-50%); }
+      #crosshair::after  { width: 100%; height: 2px; top: 50%; left: 0; transform: translateY(-50%); }
+      .crosshair-ring {
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: 30px; height: 30px;
+        border: 2px solid rgba(255, 220, 0, 0.6);
+        border-radius: 50%;
+      }
+
+      /* Счёт */
+      #score-display {
+        position: absolute;
+        top: 20px; right: 20px;
+        color: cyan;
+        font-size: 22px;
+        font-weight: bold;
+        text-shadow: 0 0 10px cyan, 0 0 20px cyan;
+        letter-spacing: 2px;
+      }
+
+      /* GPS инфо */
+      #gps-info {
+        position: absolute;
+        bottom: 80px; left: 50%;
+        transform: translateX(-50%);
+        color: #00ff88;
+        font-size: 13px;
+        text-align: center;
+        text-shadow: 0 0 8px #00ff88;
+        line-height: 1.6;
+        max-width: 320px;
+        background: rgba(0,0,0,0.5);
+        padding: 10px 16px;
+        border-radius: 10px;
+        border: 1px solid rgba(0,255,136,0.3);
+      }
+
+      /* Статус разрешений */
+      #permissions-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.92);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        color: white;
+        text-align: center;
+        padding: 30px;
+      }
+      #permissions-overlay h2 {
+        font-size: 24px;
+        color: cyan;
+        margin-bottom: 16px;
+        text-shadow: 0 0 12px cyan;
+      }
+      #permissions-overlay p {
+        font-size: 14px;
+        color: #aaa;
+        margin-bottom: 24px;
+        line-height: 1.7;
+      }
+      #btn-allow {
+        pointer-events: all;
+        background: linear-gradient(135deg, #00ff88, #00aaff);
+        color: black;
+        border: none;
+        padding: 16px 40px;
+        font-size: 18px;
+        font-family: 'Courier New', monospace;
+        font-weight: bold;
+        border-radius: 8px;
+        cursor: pointer;
+        letter-spacing: 2px;
+        box-shadow: 0 0 20px rgba(0,255,136,0.5);
+        transition: transform 0.1s;
+      }
+      #btn-allow:active { transform: scale(0.96); }
+      #perm-status {
+        margin-top: 16px;
+        font-size: 13px;
+        color: #888;
+        min-height: 20px;
+      }
+
+      /* Победный экран */
+      #win-overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.85);
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 1500;
+        pointer-events: all;
+        text-align: center;
+        padding: 30px;
+      }
+      #win-overlay.show { display: flex; }
+      #win-overlay h1 {
+        font-size: 36px;
+        color: gold;
+        text-shadow: 0 0 20px gold, 0 0 40px orange;
+        margin-bottom: 12px;
+        letter-spacing: 3px;
+        animation: pulse 1s infinite alternate;
+      }
+      #win-overlay .win-score {
+        font-size: 22px;
+        color: cyan;
+        margin-bottom: 30px;
+        text-shadow: 0 0 10px cyan;
+      }
+      #btn-restart {
+        pointer-events: all;
+        background: linear-gradient(135deg, #ff4444, #ff8800);
+        color: white;
+        border: none;
+        padding: 16px 40px;
+        font-size: 18px;
+        font-family: 'Courier New', monospace;
+        font-weight: bold;
+        border-radius: 8px;
+        cursor: pointer;
+        letter-spacing: 2px;
+        box-shadow: 0 0 20px rgba(255,68,68,0.5);
+      }
+      #btn-restart:active { transform: scale(0.96); }
+
+      @keyframes pulse {
+        from { text-shadow: 0 0 20px gold, 0 0 40px orange; }
+        to   { text-shadow: 0 0 40px gold, 0 0 80px orange, 0 0 100px yellow; }
+      }
+
+      /* Вспышка при выстреле */
+      #shoot-flash {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(255,255,200,0.15);
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.05s;
+        z-index: 900;
+      }
+      #shoot-flash.flash { opacity: 1; }
+    </style>
+
     <script>
-      window.score = 0;
+      // ─────────────────────────────────────────────
+      //  СОСТОЯНИЕ ИГРЫ
+      // ─────────────────────────────────────────────
+      window.AR_GAME = {
+        state: 'waiting',   // waiting | playing | win
+        score: 0,
+        totalDragons: 3,
+        killedDragons: 0,
+        playerLat: null,
+        playerLon: null,
+        dragonsSpawned: false
+      };
 
-      AFRAME.registerComponent('game-manager', {
-        init: function () {
-          this.gameStarted = false;
-          this.enemiesSpawned = false;
+      // ─────────────────────────────────────────────
+      //  ЗАПРОС РАЗРЕШЕНИЙ (iOS Safari требует явного тапа)
+      // ─────────────────────────────────────────────
+      window.requestPermissions = async function() {
+        let statusEl = document.querySelector('#perm-status');
+        statusEl.textContent = 'Запрашиваем разрешения…';
 
-          // Слушаем тапы по всему экрану
-          window.addEventListener('touchstart', this.onTap.bind(this));
-          window.addEventListener('mousedown', this.onTap.bind(this));
-        },
-
-        onTap: function () {
-          // ПЕРВЫЙ ТАП: Запуск игры и запросов
-          if (!this.gameStarted) {
-            this.gameStarted = true;
-            this.initPermissions();
-          } 
-          // ПОСЛЕДУЮЩИЕ ТАПЫ: Стрельба
-          else if (this.enemiesSpawned) {
-            this.shoot();
-          }
-        },
-
-        initPermissions: function () {
-          let infoText = document.querySelector('#infoText');
-          infoText.setAttribute('value', 'REQUESTING PERMISSIONS...');
-
-          // Вызов СИСТЕМНОГО окна гироскопа iOS (без кастомных белых экранов)
-          if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            DeviceOrientationEvent.requestPermission()
-              .then(state => {
-                if (state === 'granted') this.getGPS(infoText);
-                else infoText.setAttribute('value', 'GYRO DENIED!\nRELOAD PAGE');
-              })
-              .catch(console.error);
-          } else {
-            this.getGPS(infoText);
-          }
-        },
-
-        getGPS: function (infoText) {
-          infoText.setAttribute('value', 'SEARCHING GPS...');
-
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              infoText.setAttribute('value', 'ENEMIES DETECTED!');
-              
-              let lat = pos.coords.latitude;
-              let lon = pos.coords.longitude;
-              
-              // ВЫВОДИМ КООРДИНАТЫ МЕЛКИМ ШРИФТОМ НА ЭКРАН
-              document.querySelector('#debugText').setAttribute('value', `LAT: ${lat.toFixed(5)}\nLON: ${lon.toFixed(5)}`);
-
-              // Спавним 4 врагов крестом (Север, Юг, Восток, Запад)
-              if (!this.enemiesSpawned) {
-                this.enemiesSpawned = true;
-                let offset = 0.00004; // Около 4 метров от тебя
-                
-                this.spawnEnemy(lat + offset, lon); // Север
-                this.spawnEnemy(lat - offset, lon); // Юг
-                this.spawnEnemy(lat, lon + offset); // Восток
-                this.spawnEnemy(lat, lon - offset); // Запад
-              }
-            },
-            (err) => {
-              infoText.setAttribute('value', 'GPS ERROR!\nTAP TO RETRY');
-              this.gameStarted = false; // Разрешаем тапнуть снова для рестарта GPS
-            },
-            { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
-          );
-        },
-
-        spawnEnemy: function(lat, lon) {
-          let scene = document.querySelector('a-scene');
-          let enemy = document.createElement('a-entity');
-          
-          // Огромный яркий шар без лишней анимации (стоит на месте)
-          enemy.setAttribute('geometry', 'primitive: sphere; radius: 1.5');
-          enemy.setAttribute('material', 'color: #ff00ff; shader: flat');
-          enemy.setAttribute('class', 'enemy');
-          enemy.setAttribute('gps-entity-place', `latitude: ${lat}; longitude: ${lon}`);
-          enemy.setAttribute('position', '0 0 0'); // AR.js сам поднимет их на нужную высоту
-          
-          scene.appendChild(enemy);
-        },
-
-        shoot: function () {
-          // Вызываем анимацию отдачи турели
-          let turret = document.querySelector('#player-turret');
-          if(turret) turret.emit('fire');
-
-          let raycaster = document.querySelector('#cursor').components.raycaster;
-          let intersected = raycaster.intersectedEls;
-
-          if (intersected.length > 0) {
-            let target = intersected[0];
-            if (target.classList.contains('enemy')) {
-              window.score++;
-              target.parentNode.removeChild(target);
-              
-              let infoText = document.querySelector('#infoText');
-              if (window.score >= 4) {
-                infoText.setAttribute('value', 'MISSION ACCOMPLISHED!');
-                infoText.setAttribute('color', '#00FF00');
-              } else {
-                infoText.setAttribute('value', 'KILLED: ' + window.score + ' / 4');
-              }
+        // 1) DeviceOrientation (iOS 13+)
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+          try {
+            let res = await DeviceOrientationEvent.requestPermission();
+            if (res !== 'granted') {
+              statusEl.textContent = '❌ Ориентация отклонена. Обновите страницу и разрешите.';
+              return;
             }
+          } catch(e) {
+            statusEl.textContent = '❌ Ошибка ориентации: ' + e.message;
+            return;
           }
+        }
+
+        // 2) DeviceMotion (iOS 13+)
+        if (typeof DeviceMotionEvent !== 'undefined' &&
+            typeof DeviceMotionEvent.requestPermission === 'function') {
+          try {
+            let res = await DeviceMotionEvent.requestPermission();
+            // не критично если отклонено — продолжаем
+          } catch(e) {}
+        }
+
+        // 3) Геолокация
+        statusEl.textContent = '📍 Получаем GPS…';
+        if (!navigator.geolocation) {
+          statusEl.textContent = '❌ Геолокация не поддерживается';
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          function(pos) {
+            window.AR_GAME.playerLat = pos.coords.latitude;
+            window.AR_GAME.playerLon = pos.coords.longitude;
+
+            // Показываем координаты
+            let gpsEl = document.querySelector('#gps-info');
+            gpsEl.innerHTML =
+              '📍 <b>GPS получен!</b><br>' +
+              'LAT: ' + pos.coords.latitude.toFixed(6) + '<br>' +
+              'LON: ' + pos.coords.longitude.toFixed(6) + '<br>' +
+              '<span style="color:#ffcc00">🐉 Ищи драконов вокруг себя!</span>';
+
+            // Прячем оверлей разрешений
+            document.querySelector('#permissions-overlay').style.display = 'none';
+
+            // Спавним драконов
+            window.spawnDragons(pos.coords.latitude, pos.coords.longitude);
+            window.AR_GAME.state = 'playing';
+          },
+          function(err) {
+            statusEl.textContent = '❌ GPS ошибка: ' + err.message;
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+      };
+
+      // ─────────────────────────────────────────────
+      //  ПЕРЕВОД МЕТРОВ В ГРАДУСЫ
+      // ─────────────────────────────────────────────
+      function offsetLatLon(lat, lon, northM, eastM) {
+        let dLat = northM / 111320;
+        let dLon = eastM / (111320 * Math.cos(lat * Math.PI / 180));
+        return { lat: lat + dLat, lon: lon + dLon };
+      }
+
+      // ─────────────────────────────────────────────
+      //  СПАВН ТРЁХ ДРАКОНОВ ВОКРУГ ИГРОКА
+      // ─────────────────────────────────────────────
+      window.spawnDragons = function(lat, lon) {
+        if (window.AR_GAME.dragonsSpawned) return;
+        window.AR_GAME.dragonsSpawned = true;
+
+        // Смещения: спереди, слева-сзади, справа-сзади
+        let offsets = [
+          { north:  12, east:   0 },
+          { north: -8,  east: -10 },
+          { north: -8,  east:  10 }
+        ];
+
+        let scene = document.querySelector('a-scene');
+
+        offsets.forEach(function(off, i) {
+          let pos = offsetLatLon(lat, lon, off.north, off.east);
+
+          let dragon = document.createElement('a-entity');
+          dragon.setAttribute('id', 'dragon-' + i);
+          dragon.setAttribute('class', 'dragon');
+          dragon.setAttribute('gltf-model', 'assets/dragon.glb');
+          dragon.setAttribute('scale', '3 3 3');
+          dragon.setAttribute('gps-entity-place', 'latitude: ' + pos.lat + '; longitude: ' + pos.lon);
+          // Анимация покачивания
+          dragon.setAttribute('animation__hover',
+            'property: position; from: 0 0 0; to: 0 0.5 0; ' +
+            'dir: alternate; dur: 1200; loop: true; easing: easeInOutSine');
+          dragon.setAttribute('animation__rotate',
+            'property: rotation; from: 0 0 0; to: 0 360 0; dur: 8000; loop: true; easing: linear');
+
+          scene.appendChild(dragon);
+        });
+      };
+
+      // ─────────────────────────────────────────────
+      //  СТРЕЛЬБА
+      // ─────────────────────────────────────────────
+      window.shoot = function() {
+        if (window.AR_GAME.state !== 'playing') return;
+
+        // Звук
+        let snd = document.querySelector('#snd-shoot');
+        if (snd) { snd.currentTime = 0; snd.play().catch(function(){}); }
+
+        // Вспышка
+        let flash = document.querySelector('#shoot-flash');
+        flash.classList.add('flash');
+        setTimeout(function(){ flash.classList.remove('flash'); }, 80);
+
+        // Анимация отдачи турели
+        let turret = document.querySelector('#player-turret');
+        if (turret) turret.emit('fire');
+
+        // Проверяем прицел (raycaster на .dragon)
+        let cursor = document.querySelector('#ar-cursor');
+        if (!cursor) return;
+        let raycaster = cursor.components.raycaster;
+        if (!raycaster) return;
+        let hits = raycaster.intersectedEls;
+
+        if (hits.length > 0) {
+          let target = hits[0];
+          if (target.classList.contains('dragon')) {
+            killDragon(target);
+          }
+        }
+      };
+
+      function killDragon(el) {
+        // Анимация исчезновения
+        el.setAttribute('animation__die',
+          'property: scale; to: 0 0 0; dur: 300; easing: easeInBack');
+        setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 350);
+
+        window.AR_GAME.killedDragons++;
+        window.AR_GAME.score += 100;
+        updateScore();
+
+        if (window.AR_GAME.killedDragons >= window.AR_GAME.totalDragons) {
+          setTimeout(showWin, 400);
+        }
+      }
+
+      function updateScore() {
+        let s = document.querySelector('#score-display');
+        if (s) s.textContent = '🐉 ' + window.AR_GAME.killedDragons + ' / ' + window.AR_GAME.totalDragons + '   SCORE: ' + window.AR_GAME.score;
+      }
+
+      function showWin() {
+        window.AR_GAME.state = 'win';
+        let overlay = document.querySelector('#win-overlay');
+        overlay.querySelector('.win-score').textContent = 'SCORE: ' + window.AR_GAME.score;
+        overlay.classList.add('show');
+      }
+
+      window.restartGame = function() {
+        // Убираем всех оставшихся драконов
+        document.querySelectorAll('.dragon').forEach(function(el){
+          el.parentNode.removeChild(el);
+        });
+
+        window.AR_GAME.state = 'waiting';
+        window.AR_GAME.score = 0;
+        window.AR_GAME.killedDragons = 0;
+        window.AR_GAME.dragonsSpawned = false;
+
+        document.querySelector('#win-overlay').classList.remove('show');
+        updateScore();
+
+        // Показываем экран разрешений снова для нового GPS
+        document.querySelector('#permissions-overlay').style.display = 'flex';
+        document.querySelector('#perm-status').textContent = '';
+        document.querySelector('#gps-info').innerHTML = '📡 Ожидание GPS…';
+      };
+
+      // ─────────────────────────────────────────────
+      //  СТРЕЛЬБА ПО ТАПУ / КЛИКУ
+      // ─────────────────────────────────────────────
+      document.addEventListener('DOMContentLoaded', function() {
+        updateScore();
+
+        document.addEventListener('click', function(e) {
+          // Не стреляем по кнопкам UI
+          if (e.target.closest('#permissions-overlay') ||
+              e.target.closest('#win-overlay')) return;
+          window.shoot();
+        });
+
+        document.addEventListener('touchstart', function(e) {
+          if (e.target.closest('#permissions-overlay') ||
+              e.target.closest('#win-overlay')) return;
+          e.preventDefault();
+          window.shoot();
+        }, { passive: false });
+      });
+
+      // ─────────────────────────────────────────────
+      //  A-FRAME КОМПОНЕНТЫ
+      // ─────────────────────────────────────────────
+
+      // Поворот турели за камерой
+      AFRAME.registerComponent('sync-rotation-ar', {
+        tick: function() {
+          let cam = document.querySelector('#ar-camera');
+          if (!cam) return;
+          let euler = new THREE.Euler().setFromQuaternion(cam.object3D.quaternion, 'YXZ');
+          this.el.object3D.rotation.y = euler.y;
         }
       });
     </script>
-    
-    <style> 
-      /* Убираем черную кнопку VR в правом нижнем углу */
-      .a-enter-vr { display: none !important; } 
-    </style>
   </head>
 
-  <body style="margin: 0; overflow: hidden;">
-    
-    <!-- 
-      СЦЕНА 
-      device-orientation-permission-ui="enabled: false" - убивает кастомный белый экран с кнопкой! 
-    -->
-    <a-scene 
+  <body>
+    <!-- ══════════════════════════════════════════
+         A-FRAME AR СЦЕНА
+    ══════════════════════════════════════════ -->
+    <a-scene
       vr-mode-ui="enabled: false"
-      device-orientation-permission-ui="enabled: false"
-      embedded
-      arjs="sourceType: webcam; debugUIEnabled: false;"
-      game-manager>
+      arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false; trackingMethod: best"
+      renderer="antialias: true; alpha: true"
+      embedded>
 
       <a-assets>
         <a-asset-item id="turret-model" src="assets/turel.glb"></a-asset-item>
+        <audio id="snd-shoot" src="assets/shoot.mp3" preload="auto"></audio>
       </a-assets>
 
+      <!-- ОКРУЖЕНИЕ: свет -->
+      <a-entity light="type: ambient; color: #ffffff; intensity: 0.8"></a-entity>
+      <a-entity light="type: directional; color: #ffffee; intensity: 1.2" position="2 8 4"></a-entity>
+
+      <!-- ТУРЕЛЬ (у ног игрока, прикреплена к камере) -->
+      <a-entity id="player-turret"
+                gltf-model="#turret-model"
+                position="0 -1.5 -3"
+                scale="0.25 0.25 0.25"
+                sync-rotation-ar
+                animation__recoil="property: position; from: 0 -1.5 -3; to: 0 -1.5 -2.7; dur: 60; dir: alternate; repeat: 1; startEvents: fire">
+      </a-entity>
+
       <!-- КАМЕРА -->
-      <a-camera id="main-camera" gps-camera="positionMinAccuracy: 100000;" rotation-reader>
-        
-        <!-- НАДПИСЬ ИНФОРМАЦИИ (Маленький шрифт: width="1.5") -->
-        <a-text id="infoText" value="TAP SCREEN TO START" position="0 0.4 -2" align="center" color="yellow" width="1.5"></a-text>
-
-        <!-- ТЕКСТ С КООРДИНАТАМИ (Очень мелкий шрифт: width="1") -->
-        <a-text id="debugText" value="" position="0 0.1 -2" align="center" color="cyan" width="1"></a-text>
-
-        <!-- ПРИЦЕЛ (Увеличена дальность луча - far: 100, чтобы 100% доставал до шаров) -->
-        <a-entity id="cursor" 
+      <a-entity id="ar-camera" camera look-controls="enabled: true" arjs-look-controls="enabled: true" position="0 0 0">
+        <!-- Прицел A-Frame (raycaster для попаданий) -->
+        <a-entity id="ar-cursor"
                   cursor="rayOrigin: entity; fuse: false"
-                  raycaster="objects: .enemy; far: 100"
+                  raycaster="objects: .dragon; far: 300"
                   position="0 0 -1"
-                  geometry="primitive: ring; radiusInner: 0.02; radiusOuter: 0.03"
-                  material="color: red; shader: flat">
+                  geometry="primitive: ring; radiusInner: 0.015; radiusOuter: 0.025"
+                  material="color: yellow; shader: flat; opacity: 0">
         </a-entity>
+      </a-entity>
 
-        <!-- ТУРЕЛЬ с отдачей (animation__recoil) как в index.html -->
-        <a-entity id="player-turret" 
-                  gltf-model="#turret-model" 
-                  position="0 -1 -1.5" 
-                  scale="0.2 0.2 0.2"
-                  animation__recoil="property: position; from: 0 -1 -1.5; to: 0 -1 -1.2; dur: 50; dir: alternate; repeat: 1; startEvents: fire">
-        </a-entity>
-
-      </a-camera>
     </a-scene>
+
+    <!-- ══════════════════════════════════════════
+         HTML HUD (поверх сцены)
+    ══════════════════════════════════════════ -->
+    <div id="hud">
+      <!-- Прицел -->
+      <div id="crosshair">
+        <div class="crosshair-ring"></div>
+      </div>
+
+      <!-- Счёт -->
+      <div id="score-display">🐉 0 / 3   SCORE: 0</div>
+
+      <!-- GPS информация -->
+      <div id="gps-info">📡 Ожидание GPS…</div>
+
+      <!-- Вспышка выстрела -->
+      <div id="shoot-flash"></div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         ЭКРАН РАЗРЕШЕНИЙ
+    ══════════════════════════════════════════ -->
+    <div id="permissions-overlay">
+      <h2>🐉 DRAGON HUNTER AR</h2>
+      <p>
+        Для работы AR необходимо:<br>
+        📷 Доступ к камере<br>
+        📍 Геолокация<br>
+        📱 Датчик ориентации и движения<br><br>
+        Нажми кнопку и разреши все запросы.
+      </p>
+      <button id="btn-allow" onclick="window.requestPermissions()">
+        🚀 НАЧАТЬ AR
+      </button>
+      <div id="perm-status"></div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         ЭКРАН ПОБЕДЫ
+    ══════════════════════════════════════════ -->
+    <div id="win-overlay">
+      <h1>🏆 ПОБЕДА!</h1>
+      <p style="color:#aaa; margin-bottom:8px; font-size:15px;">Все драконы повержены!</p>
+      <div class="win-score">SCORE: 0</div>
+      <button id="btn-restart" onclick="window.restartGame()">
+        🔄 RESTART
+      </button>
+    </div>
+
   </body>
 </html>
