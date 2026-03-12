@@ -31,7 +31,8 @@
               
               let infoText = document.querySelector('#infoText');
               if (window.score >= 3) {
-                infoText.setAttribute('value', 'YOU WIN!');
+                // Текст переведен на английский, чтобы A-Frame его увидел
+                infoText.setAttribute('value', 'MISSION ACCOMPLISHED!');
                 infoText.setAttribute('color', '#00FF00');
               } else {
                 infoText.setAttribute('value', 'KILLED: ' + window.score + ' / 3');
@@ -47,6 +48,7 @@
           let startBtn = document.getElementById('start-btn');
           let uiOverlay = document.getElementById('ui-overlay');
           let infoText = document.querySelector('#infoText');
+          let debugText = document.querySelector('#debugText'); // Новый текст для координат
 
           startBtn.addEventListener('click', () => {
             startBtn.innerText = "РАСЧЕТ КООРДИНАТ...";
@@ -61,22 +63,25 @@
               fastGPS();
             }
 
-            // 2. Мгновенное получение "грубых" координат
+            // 2. Мгновенное получение координат
             function fastGPS() {
               navigator.geolocation.getCurrentPosition(
                 (pos) => {
-                  // Прячем меню
                   uiOverlay.style.display = 'none';
-                  infoText.setAttribute('value', 'ВРАГИ ОБНАРУЖЕНЫ!');
+                  infoText.setAttribute('value', 'ENEMIES DETECTED!');
 
-                  // Берем любые координаты, которые выдал телефон (даже примерные)
                   let lat = pos.coords.latitude;
                   let lon = pos.coords.longitude;
-                  let offset = 0.00005; // Смещение на ~5 метров
+                  
+                  // ВЫВОДИМ КООРДИНАТЫ НА ЭКРАН (Округлено до 5 знаков)
+                  debugText.setAttribute('value', `LAT: ${lat.toFixed(5)}\nLON: ${lon.toFixed(5)}`);
 
-                  // Спавним врагов
+                  // Смещение координат на 10-15 метров от игрока, чтобы они не появились внутри него
+                  let offset = 0.0001; 
+
                   if (!enemiesSpawned) {
                     enemiesSpawned = true;
+                    // Спавним 3 огромных фиолетовых шара вокруг
                     spawnEnemy(lat + offset, lon); 
                     spawnEnemy(lat, lon + offset); 
                     spawnEnemy(lat - offset, lon - offset); 
@@ -86,8 +91,6 @@
                   alert("Не удалось определить местоположение. Проверьте включен ли GPS.");
                   startBtn.innerText = "ПОВТОРИТЬ";
                 },
-                // СЕКРЕТ ЗДЕСЬ: enableHighAccuracy: false позволяет получить координаты
-                // по Wi-Fi за долю секунды, не дожидаясь ответа от спутников!
                 { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
               );
             }
@@ -96,11 +99,16 @@
               let scene = document.querySelector('a-scene');
               let enemy = document.createElement('a-entity');
               
-              enemy.setAttribute('geometry', 'primitive: sphere; radius: 1.5');
-              enemy.setAttribute('material', 'color: purple');
+              // ДЕЛАЕМ ВРАГОВ ОГРОМНЫМИ И ЯРКИМИ
+              // radius: 3 - это шар размером с машину. shader: flat - он будет светиться даже в темноте!
+              enemy.setAttribute('geometry', 'primitive: sphere; radius: 3');
+              enemy.setAttribute('material', 'color: #ff00ff; shader: flat');
               enemy.setAttribute('class', 'enemy');
               enemy.setAttribute('gps-entity-place', `latitude: ${lat}; longitude: ${lon}`);
-              enemy.setAttribute('position', '0 2 0'); // Высота 2 метра
+              
+              // Делаем так, чтобы они летали вверх-вниз в небе (от 3 до 6 метров)
+              enemy.setAttribute('position', '0 3 0');
+              enemy.setAttribute('animation', 'property: position; to: 0 6 0; dir: alternate; dur: 2000; loop: true');
               
               scene.appendChild(enemy);
             }
@@ -136,7 +144,7 @@
       <button id="start-btn">НАЧАТЬ</button>
     </div>
 
-    <!-- arjs-сцена -->
+    <!-- arjs-сцена с включенной отладкой -->
     <a-scene 
       vr-mode-ui="enabled: false"
       embedded
@@ -147,14 +155,15 @@
         <a-asset-item id="turret-model" src="assets/turel.glb"></a-asset-item>
       </a-assets>
 
-      <!-- 
-        GPS-CAMERA с максимальным уровнем "терпимости" к плохим координатам 
-        (positionMinAccuracy: 100000 - пустит даже погрешность в 100 км!)
-      -->
       <a-camera id="main-camera" gps-camera="positionMinAccuracy: 100000;" rotation-reader>
         
-        <a-text id="infoText" value="" position="0 0.5 -3" align="center" color="yellow" width="3"></a-text>
+        <!-- Текст статуса ("ENEMIES DETECTED!") -->
+        <a-text id="infoText" value="" position="0 0.5 -3" align="center" color="yellow" width="4"></a-text>
 
+        <!-- ТЕКСТ С КООРДИНАТАМИ (Новый) -->
+        <a-text id="debugText" value="GPS: WAITING" position="0 -0.5 -3" align="center" color="cyan" width="3"></a-text>
+
+        <!-- Прицел -->
         <a-entity id="cursor" 
                   cursor="rayOrigin: entity; fuse: false"
                   raycaster="objects: .enemy"
@@ -163,6 +172,7 @@
                   material="color: red; shader: flat">
         </a-entity>
 
+        <!-- Турель -->
         <a-entity id="player-turret" 
                   gltf-model="#turret-model" 
                   position="0 -1 -1.5" 
