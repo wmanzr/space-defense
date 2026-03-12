@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <title>AR GPS Defense</title>
-    <!-- ПРАВИЛЬНЫЕ библиотеки A-Frame и AR.js для работы с GPS -->
+    <!-- Библиотеки -->
     <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
 
@@ -40,7 +40,7 @@
         }
       });
 
-      // 2. ГЛАВНЫЙ МЕНЕДЖЕР AR
+      // 2. ГЛАВНЫЙ МЕНЕДЖЕР AR (С правильным запросом гироскопа и GPS)
       AFRAME.registerComponent('ar-manager', {
         init: function () {
           let startBtn = document.getElementById('start-btn');
@@ -48,54 +48,63 @@
           let infoText = document.querySelector('#infoText');
 
           startBtn.addEventListener('click', () => {
-            startBtn.innerText = "ПОЛУЧАЕМ КООРДИНАТЫ...";
-            
-            // Вызываем системный диалог GPS
-            navigator.geolocation.getCurrentPosition(
-              (position) => {
-                // УСПЕХ: Пользователь разрешил GPS
-                uiOverlay.style.display = 'none';
-                infoText.setAttribute('value', 'ENEMIES DETECTED! LOOK AROUND.');
+            startBtn.innerText = "ЗАГРУЗКА...";
 
-                // Включаем AR камеру
-                document.getElementById('main-camera').setAttribute('gps-camera', 'simulateLatitude: false; simulateLongitude: false;');
-                
-                let lat = position.coords.latitude;
-                let lon = position.coords.longitude;
-                let offset = 0.00005; // ~5 метров
+            // ШАГ 1: Запрашиваем доступ к ГИРОСКОПУ (Критично для iPhone, чтобы камера не висла)
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+              DeviceOrientationEvent.requestPermission()
+                .then(permissionState => {
+                  if (permissionState === 'granted') {
+                    requestGPS(); // Гироскоп разрешен, идем за GPS
+                  } else {
+                    alert("Ошибка: Для игры необходимо разрешить доступ к движению (гироскопу)!");
+                    startBtn.innerText = "РАЗРЕШИТЬ И НАЧАТЬ";
+                  }
+                })
+                .catch(console.error);
+            } else {
+              requestGPS(); // Для Android или старых iOS
+            }
 
-                // Создаем врагов вокруг тебя
-                this.spawnEnemy(lat + offset, lon); 
-                this.spawnEnemy(lat, lon + offset); 
-                this.spawnEnemy(lat - offset, lon - offset); 
-              },
-              (error) => {
-                // ОШИБКА: Показываем точную причину
-                let msg = "Неизвестная ошибка";
-                if (error.code === 1) msg = "Safari заблокировал доступ. Очистите данные сайта в настройках iPhone!";
-                if (error.code === 2) msg = "Сигнал GPS не найден. Выйдите на улицу.";
-                if (error.code === 3) msg = "Таймаут. GPS работает слишком медленно.";
-                
-                alert("Ошибка GPS: " + msg);
-                startBtn.innerText = "РАЗРЕШИТЬ И НАЧАТЬ";
-              },
-              // maximumAge: 0 заставляет телефон брать свежие координаты, а не кеш
-              { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 } 
-            );
+            // ШАГ 2: Запрашиваем GPS
+            function requestGPS() {
+              navigator.geolocation.getCurrentPosition(
+                (position) => {
+                  // Успех! Прячем черное меню
+                  uiOverlay.style.display = 'none';
+                  infoText.setAttribute('value', 'ENEMIES DETECTED! LOOK AROUND.');
+
+                  let lat = position.coords.latitude;
+                  let lon = position.coords.longitude;
+                  let offset = 0.00005; // Примерно 5 метров
+
+                  // Спавним 3 врагов вокруг
+                  spawnEnemy(lat + offset, lon); 
+                  spawnEnemy(lat, lon + offset); 
+                  spawnEnemy(lat - offset, lon - offset); 
+                },
+                (error) => {
+                  alert("Ошибка GPS: Разрешите геолокацию в настройках iPhone.");
+                  startBtn.innerText = "РАЗРЕШИТЬ И НАЧАТЬ";
+                },
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+              );
+            }
+
+            // Функция создания врагов
+            function spawnEnemy(lat, lon) {
+              let scene = document.querySelector('a-scene');
+              let enemy = document.createElement('a-entity');
+              
+              enemy.setAttribute('geometry', 'primitive: sphere; radius: 1');
+              enemy.setAttribute('material', 'color: purple');
+              enemy.setAttribute('class', 'enemy');
+              enemy.setAttribute('gps-entity-place', `latitude: ${lat}; longitude: ${lon}`);
+              enemy.setAttribute('position', '0 1.5 0');
+              
+              scene.appendChild(enemy);
+            }
           });
-        },
-        
-        spawnEnemy: function(lat, lon) {
-          let scene = document.querySelector('a-scene');
-          let enemy = document.createElement('a-entity');
-          
-          enemy.setAttribute('geometry', 'primitive: sphere; radius: 1');
-          enemy.setAttribute('material', 'color: purple');
-          enemy.setAttribute('class', 'enemy');
-          enemy.setAttribute('gps-entity-place', `latitude: ${lat}; longitude: ${lon}`);
-          enemy.setAttribute('position', '0 1.5 0');
-          
-          scene.appendChild(enemy);
         }
       });
     </script>
@@ -117,26 +126,31 @@
 
   <body style="margin: 0; overflow: hidden;">
     
+    <!-- СТАРТОВОЕ МЕНЮ -->
     <div id="ui-overlay">
       <div class="warning">
         <h2>AR ЗАЩИТА БАЗЫ</h2>
-        <p>Для игры необходимо разрешить доступ к камере и геолокации (GPS).</p>
+        <p>Для игры необходимо разрешить доступ к движению и геолокации.</p>
       </div>
       <button id="start-btn">РАЗРЕШИТЬ И НАЧАТЬ</button>
     </div>
 
-    <!-- arjs: sourceWidth и sourceHeight решают проблему с качеством камеры на iPhone -->
+    <!-- 
+      СЦЕНА 
+      Внимание: gps-camera возвращен на место, чтобы движок загрузился корректно! 
+    -->
     <a-scene 
       vr-mode-ui="enabled: false"
       embedded
-      arjs="sourceType: webcam; debugUIEnabled: false; sourceWidth:1280; sourceHeight:960; displayWidth: 1280; displayHeight: 960;"
+      arjs="sourceType: webcam; debugUIEnabled: false;"
       ar-manager shooter>
 
       <a-assets>
         <a-asset-item id="turret-model" src="assets/turel.glb"></a-asset-item>
       </a-assets>
 
-      <a-camera id="main-camera" rotation-reader>
+      <!-- КАМЕРА с заранее включенным гироскопом и GPS модулем -->
+      <a-camera id="main-camera" gps-camera rotation-reader>
         
         <a-text id="infoText" value="Waiting for start..." position="0 0.5 -2" align="center" color="yellow" width="4"></a-text>
 
