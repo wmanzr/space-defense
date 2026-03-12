@@ -40,6 +40,8 @@
         
         // Показываем кнопку RESTART
         document.querySelector('#gameOverMenu').setAttribute('position', '0 1.5 -4');
+
+        document.querySelector('#finalScoreText').setAttribute('value', 'SCORE: ' + window.score);
       }
 
       // 1. Спавнер врагов
@@ -172,6 +174,8 @@
         <a-plane id="btn-restart" class="clickable" color="#FF0000" width="4" height="1.5" position="0 0 0">
           <a-text value="RESTART" color="white" align="center" width="10" position="0 0 0.1"></a-text>
         </a-plane>
+
+        <a-text id="finalScoreText" value="SCORE: 0" color="yellow" align="center" width="10" position="0 1.5 0"></a-text>
       </a-entity>
 
 

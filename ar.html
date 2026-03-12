@@ -7,131 +7,129 @@
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
 
     <script>
-      // Компонент игровой логики AR
-      AFRAME.registerComponent('ar-game-logic', {
+      window.score = 0;
+      let gpsLoaded = false;
+
+      // 1. КОМПОНЕНТ СТРЕЛЬБЫ (Точно как в index.html)
+      AFRAME.registerComponent('shooter', {
         init: function () {
-          this.score = 0;
-          this.enemiesAlive = 3;
-          
-          let btn = document.getElementById('start-btn');
-          let ui = document.getElementById('ui-container');
-
-          // Ждем клика по кнопке старта, чтобы браузер разрешил камеру
-          btn.addEventListener('click', () => {
-            ui.style.display = 'none'; // Прячем кнопку
-            this.startGame();
-          });
+          window.addEventListener('touchstart', this.shoot.bind(this));
+          window.addEventListener('mousedown', this.shoot.bind(this));
         },
+        shoot: function () {
+          let raycaster = document.querySelector('#cursor').components.raycaster;
+          let intersected = raycaster.intersectedEls;
 
-        startGame: function () {
-          // Запрашиваем текущие GPS координаты игрока
-          if ('geolocation' in navigator) {
-            navigator.geolocation.getCurrentPosition((position) => {
-              let lat = position.coords.latitude;
-              let lon = position.coords.longitude;
+          // Анимация отдачи турели при стрельбе
+          let turret = document.querySelector('#player-turret');
+          if(turret) turret.emit('fire');
+
+          // Если попали в цель
+          if (intersected.length > 0) {
+            let target = intersected[0];
+            if (target.classList.contains('enemy')) {
+              window.score++;
               
-              // Создаем 3 врагов вокруг игрока с помощью математики
-              // 0.0002 градуса - это примерно 20 метров в реальном мире
-              this.spawnEnemy(lat + 0.0002, lon, "red"); // Враг на Севере
-              this.spawnEnemy(lat, lon + 0.0002, "orange"); // Враг на Востоке
-              this.spawnEnemy(lat - 0.0002, lon - 0.0002, "purple"); // Враг на Юго-Западе
-
-              document.getElementById('score-display').innerText = "Врагов найдено: 0 / 3\nОсмотритесь вокруг!";
-            }, (error) => {
-              alert("Ошибка GPS: Разрешите доступ к геопозиции!");
-            }, { enableHighAccuracy: true });
-          }
-        },
-
-        spawnEnemy: function(lat, lon, color) {
-          let scene = document.querySelector('a-scene');
-          let enemy = document.createElement('a-sphere');
-          
-          // Задаем параметры врага
-          enemy.setAttribute('radius', '2'); // Большой размер, чтобы было видно издалека
-          enemy.setAttribute('color', color);
-          enemy.setAttribute('class', 'clickable'); // Чтобы по нему можно было кликать
-          
-          // ВАЖНО: Привязываем врага к сгенерированным GPS координатам
-          enemy.setAttribute('gps-entity-place', `latitude: ${lat}; longitude: ${lon};`);
-          
-          // Поднимаем его на 5 метров над землей
-          enemy.setAttribute('position', '0 5 0'); 
-          
-          // Анимация левитации
-          enemy.setAttribute('animation', 'property: position; to: 0 6 0; dir: alternate; dur: 2000; loop: true');
-
-          // Логика уничтожения при клике
-          enemy.addEventListener('click', () => {
-            this.score++;
-            this.enemiesAlive--;
-            document.getElementById('score-display').innerText = `Сбито: ${this.score} / 3`;
-            
-            // Звук пиканья (используем встроенный генератор звука браузера для надежности)
-            let ctx = new (window.AudioContext || window.webkitAudioContext)();
-            let osc = ctx.createOscillator();
-            osc.connect(ctx.destination);
-            osc.frequency.value = 800;
-            osc.start();
-            osc.stop(ctx.currentTime + 0.1);
-
-            // Удаляем сферу
-            enemy.parentNode.removeChild(enemy);
-
-            // Проверка победы
-            if (this.enemiesAlive === 0) {
-              document.getElementById('score-display').innerText = "МИССИЯ ВЫПОЛНЕНА!\nВсе координаты зачищены.";
+              // Удаляем убитого врага
+              target.parentNode.removeChild(target);
+              
+              // Проверяем победу
+              if (window.score >= 3) {
+                document.querySelector('#infoText').setAttribute('value', 'YOU WIN! ALL ENEMIES DESTROYED');
+                document.querySelector('#infoText').setAttribute('color', '#00FF00'); // Зеленый текст
+              } else {
+                document.querySelector('#infoText').setAttribute('value', 'KILLED: ' + window.score + ' / 3');
+              }
             }
-          });
+          }
+        }
+      });
 
+      // 2. КОМПОНЕНТ GPS (Спавн объектов вокруг игрока)
+      AFRAME.registerComponent('gps-spawner', {
+        init: function () {
+          // Ждем системного события AR.js, когда он сам получит геопозицию
+          window.addEventListener('gps-camera-update-position', (e) => {
+            // Чтобы не спавнить бесконечно, делаем проверку
+            if (gpsLoaded) return; 
+            gpsLoaded = true;
+
+            // Берем твои точные координаты в эту секунду
+            let lat = e.detail.position.latitude;
+            let lon = e.detail.position.longitude;
+
+            document.querySelector('#infoText').setAttribute('value', 'ENEMIES DETECTED! LOOK AROUND.');
+
+            // Смещение координат. 0.00005 градусов — это примерно 5 метров.
+            let offset = 0.00005; 
+
+            // Ставим трех врагов вокруг тебя по компасу
+            this.spawnEnemy(lat + offset, lon); // Спереди
+            this.spawnEnemy(lat, lon + offset); // Справа
+            this.spawnEnemy(lat - offset, lon - offset); // Сзади-слева
+          });
+        },
+        
+        spawnEnemy: function(lat, lon) {
+          let scene = document.querySelector('a-scene');
+          let enemy = document.createElement('a-entity');
+          
+          // Я делаю их сферами. Если хочешь модель дракона, напиши тут: 
+          // enemy.setAttribute('gltf-model', 'assets/dragon.glb');
+          enemy.setAttribute('geometry', 'primitive: sphere; radius: 1');
+          enemy.setAttribute('material', 'color: purple');
+          
+          enemy.setAttribute('class', 'enemy'); // Обязательно для прицела
+          
+          // Привязываем к вычисленным GPS координатам
+          enemy.setAttribute('gps-entity-place', `latitude: ${lat}; longitude: ${lon}`);
+          
+          // Поднимаем на уровень глаз (1.5 метра над землей)
+          enemy.setAttribute('position', '0 1.5 0');
+          
           scene.appendChild(enemy);
         }
       });
     </script>
-
-    <!-- HTML поверх камеры (Стили для кнопок и текста) -->
-    <style>
-      #ui-container {
-        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0,0,0,0.8); z-index: 1000;
-        display: flex; justify-content: center; align-items: center;
-      }
-      #start-btn {
-        padding: 20px 40px; font-size: 24px; font-weight: bold; background: #00FF00;
-        border: none; border-radius: 10px; cursor: pointer; text-align: center;
-      }
-      #score-display {
-        position: absolute; top: 20px; left: 0; width: 100%; text-align: center;
-        color: cyan; font-size: 24px; font-family: sans-serif; font-weight: bold; z-index: 500;
-        text-shadow: 2px 2px 4px #000;
-      }
-      .crosshair {
-        position: absolute; top: 50%; left: 50%; width: 20px; height: 20px;
-        border: 2px solid yellow; border-radius: 50%; transform: translate(-50%, -50%);
-        z-index: 500; pointer-events: none;
-      }
-    </style>
   </head>
 
   <body style="margin: 0; overflow: hidden;">
-    
-    <!-- Интерфейс HTML -->
-    <div id="ui-container">
-      <button id="start-btn">ВКЛЮЧИТЬ AR СЕНСОРЫ</button>
-    </div>
-    <div id="score-display">Ожидание GPS...</div>
-    <div class="crosshair"></div>
-
-    <!-- Сцена AR. Запрашиваем веб-камеру -->
+    <!-- arjs: используем камеру. debugUIEnabled: false убирает лишние надписи разработчика -->
     <a-scene 
       vr-mode-ui="enabled: false"
       embedded
       arjs="sourceType: webcam; debugUIEnabled: false;"
-      ar-game-logic>
+      gps-spawner shooter>
 
+      <a-assets>
+        <a-asset-item id="turret-model" src="assets/turel.glb"></a-asset-item>
+      </a-assets>
+
+      <!-- КАМЕРА AR.JS -->
       <a-camera gps-camera rotation-reader>
-        <!-- Встроенный прицел для взаимодействия с .clickable объектами -->
-        <a-entity cursor="rayOrigin: mouse; fuse: false" raycaster="objects: .clickable"></a-entity>
+        
+        <!-- Информационный текст (всегда висит перед экраном) -->
+        <a-text id="infoText" value="Waiting for GPS..." position="0 0.5 -2" align="center" color="yellow" width="4"></a-text>
+
+        <!-- Прицел для стрельбы -->
+        <a-entity id="cursor" 
+                  cursor="rayOrigin: entity; fuse: false"
+                  raycaster="objects: .enemy"
+                  position="0 0 -1"
+                  geometry="primitive: ring; radiusInner: 0.02; radiusOuter: 0.03"
+                  material="color: red; shader: flat">
+        </a-entity>
+
+        <!-- ТУРЕЛЬ -->
+        <!-- Она вложена внутрь <a-camera>, поэтому она ВСЕГДА перемещается за тобой. -->
+        <!-- Позиция: 0 (центр), -1 (под ногами), -1.5 (чуть-чуть вынесена вперед, чтобы было видно дуло) -->
+        <a-entity id="player-turret" 
+                  gltf-model="#turret-model" 
+                  position="0 -1 -1.5" 
+                  scale="0.2 0.2 0.2" 
+                  animation__recoil="property: position; from: 0 -1 -1.5; to: 0 -1 -1.2; dur: 50; dir: alternate; repeat: 1; startEvents: fire">
+        </a-entity>
+
       </a-camera>
 
     </a-scene>
