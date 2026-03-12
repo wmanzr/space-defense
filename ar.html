@@ -9,54 +9,50 @@
     <script>
       window.score = 0;
 
-      // ЕДИНЫЙ МЕНЕДЖЕР ИГРЫ (Управляет и разрешениями, и стрельбой)
       AFRAME.registerComponent('game-manager', {
         init: function () {
           this.gameStarted = false;
           this.enemiesSpawned = false;
 
-          // Вешаем слушатель тапа по экрану
           window.addEventListener('touchstart', this.onTap.bind(this));
           window.addEventListener('mousedown', this.onTap.bind(this));
         },
 
         onTap: function () {
-          // ПЕРВЫЙ ТАП: Запрашиваем разрешения
+          // 1. Принудительно запускаем видео с камеры (обход защиты Apple)
+          let video = document.querySelector('video');
+          if (video) video.play();
+
+          // 2. Логика первого тапа (Разрешения)
           if (!this.gameStarted) {
             this.gameStarted = true;
             this.initPermissions();
           } 
-          // ПОСЛЕДУЮЩИЕ ТАПЫ: Стреляем
+          // 3. Логика стрельбы
           else if (this.enemiesSpawned) {
             this.shoot();
           }
         },
 
-        // Запрос системных разрешений
         initPermissions: function () {
           let infoText = document.querySelector('#infoText');
-          infoText.setAttribute('value', 'GETTING PERMISSIONS...');
+          infoText.setAttribute('value', 'REQUESTING PERMISSIONS...');
 
-          // 1. Запрос Гироскопа (Обязательно по правилам Apple)
+          // Гироскоп
           if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
             DeviceOrientationEvent.requestPermission()
-              .then(permissionState => {
-                if (permissionState === 'granted') {
-                  this.getGPS(infoText);
-                } else {
-                  infoText.setAttribute('value', 'GYRO DENIED!\nRELOAD PAGE');
-                }
+              .then(state => {
+                if (state === 'granted') this.getGPS(infoText);
+                else infoText.setAttribute('value', 'GYRO DENIED!');
               })
               .catch(console.error);
           } else {
-            // Если устройство Android или старый iOS
             this.getGPS(infoText);
           }
         },
 
-        // Запрос Геолокации
         getGPS: function (infoText) {
-          infoText.setAttribute('value', 'SEARCHING SATELLITES...');
+          infoText.setAttribute('value', 'SEARCHING GPS...');
 
           navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -65,12 +61,14 @@
               let lat = pos.coords.latitude;
               let lon = pos.coords.longitude;
               
-              // Вывод координат на экран для проверки
+              // Вывод координат
               document.querySelector('#debugText').setAttribute('value', `LAT: ${lat.toFixed(5)}\nLON: ${lon.toFixed(5)}`);
 
               if (!this.enemiesSpawned) {
                 this.enemiesSpawned = true;
-                let offset = 0.0001; // Смещение около 10 метров
+                
+                // ОЧЕНЬ МАЛЕНЬКОЕ СМЕЩЕНИЕ (Враги появятся буквально в 2-3 метрах от тебя)
+                let offset = 0.00002; 
                 
                 this.spawnEnemy(lat + offset, lon); 
                 this.spawnEnemy(lat, lon + offset); 
@@ -78,35 +76,36 @@
               }
             },
             (err) => {
-              // Если GPS дал сбой, разрешаем тапнуть еще раз для повторной попытки
-              infoText.setAttribute('value', 'GPS ERROR!\nTAP TO RETRY');
+              infoText.setAttribute('value', 'GPS ERROR! TAP TO RETRY');
               this.gameStarted = false; 
             },
-            // maximumAge: 60000 берет координаты из кэша (до 1 минуты давности), что ускоряет загрузку
-            { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+            { enableHighAccuracy: false, timeout: 15000, maximumAge: 0 }
           );
         },
 
-        // Функция создания врагов
         spawnEnemy: function(lat, lon) {
           let scene = document.querySelector('a-scene');
           let enemy = document.createElement('a-entity');
           
-          enemy.setAttribute('geometry', 'primitive: sphere; radius: 2');
+          // Враги статичные, без анимации
+          enemy.setAttribute('geometry', 'primitive: sphere; radius: 1.5');
           enemy.setAttribute('material', 'color: #ff00ff; shader: flat');
           enemy.setAttribute('class', 'enemy');
           enemy.setAttribute('gps-entity-place', `latitude: ${lat}; longitude: ${lon}`);
-          
-          // ОЧЕНЬ ПЛАВНАЯ И МЕДЛЕННАЯ АНИМАЦИЯ (Легкое парение)
-          enemy.setAttribute('animation', 'property: position; from: 0 1.5 0; to: 0 2.0 0; dir: alternate; dur: 4000; loop: true; easing: easeInOutSine');
+          enemy.setAttribute('position', '0 1 0'); // Высота 1 метр (на уровне груди)
           
           scene.appendChild(enemy);
         },
 
-        // Функция стрельбы
         shoot: function () {
+          // НАДЕЖНАЯ ОТДАЧА ТУРЕЛИ ЧЕРЕЗ JAVASCRIPT
           let turret = document.querySelector('#player-turret');
-          if(turret) turret.emit('fire');
+          if(turret) {
+            turret.setAttribute('position', '0 -1 -1.3'); // Дергаем назад
+            setTimeout(() => {
+              turret.setAttribute('position', '0 -1 -1.5'); // Возвращаем на место через 100мс
+            }, 100);
+          }
 
           let raycaster = document.querySelector('#cursor').components.raycaster;
           let intersected = raycaster.intersectedEls;
@@ -130,8 +129,12 @@
       });
     </script>
     
-    <!-- Скрываем техническую кнопку VR, генерируемую A-Frame -->
-    <style> .a-enter-vr { display: none !important; } </style>
+    <style> 
+      /* СКРЫВАЕМ КРИВОЕ ОКНО AR.js "Author camera permission..." */
+      div[style*="z-index: 10000"] { display: none !important; }
+      /* Скрываем кнопку VR */
+      .a-enter-vr { display: none !important; } 
+    </style>
   </head>
 
   <body style="margin: 0; overflow: hidden;">
@@ -150,11 +153,11 @@
       <!-- КАМЕРА -->
       <a-camera id="main-camera" gps-camera="positionMinAccuracy: 100000;" rotation-reader>
         
-        <!-- СТАРТОВАЯ НАДПИСЬ -->
-        <a-text id="infoText" value="TAP SCREEN TO START" position="0 0.5 -3" align="center" color="yellow" width="4"></a-text>
+        <!-- СТАРТОВАЯ НАДПИСЬ (Шрифт уменьшен: width="2") -->
+        <a-text id="infoText" value="TAP SCREEN TO START" position="0 0.5 -3" align="center" color="yellow" width="2"></a-text>
 
-        <!-- ТЕКСТ С КООРДИНАТАМИ -->
-        <a-text id="debugText" value="" position="0 -0.5 -3" align="center" color="cyan" width="3"></a-text>
+        <!-- ТЕКСТ С КООРДИНАТАМИ (Шрифт уменьшен: width="1.5") -->
+        <a-text id="debugText" value="" position="0 -0.5 -3" align="center" color="cyan" width="1.5"></a-text>
 
         <!-- ПРИЦЕЛ -->
         <a-entity id="cursor" 
@@ -169,8 +172,7 @@
         <a-entity id="player-turret" 
                   gltf-model="#turret-model" 
                   position="0 -1 -1.5" 
-                  scale="0.2 0.2 0.2" 
-                  animation__recoil="property: position; from: 0 -1 -1.5; to: 0 -1 -1.2; dur: 50; dir: alternate; repeat: 1; startEvents: fire">
+                  scale="0.2 0.2 0.2">
         </a-entity>
 
       </a-camera>
