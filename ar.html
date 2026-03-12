@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8">
     <title>AR GPS Defense</title>
+    <!-- Библиотеки A-Frame и AR.js -->
     <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
     <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
 
     <script>
       window.score = 0;
-      let gpsLoaded = false;
 
-      // 1. КОМПОНЕНТ СТРЕЛЬБЫ (Точно как в index.html)
+      // 1. КОМПОНЕНТ СТРЕЛЬБЫ
       AFRAME.registerComponent('shooter', {
         init: function () {
           window.addEventListener('touchstart', this.shoot.bind(this));
@@ -20,23 +20,20 @@
           let raycaster = document.querySelector('#cursor').components.raycaster;
           let intersected = raycaster.intersectedEls;
 
-          // Анимация отдачи турели при стрельбе
+          // Отдача турели
           let turret = document.querySelector('#player-turret');
           if(turret) turret.emit('fire');
 
-          // Если попали в цель
+          // Проверка попадания
           if (intersected.length > 0) {
             let target = intersected[0];
             if (target.classList.contains('enemy')) {
               window.score++;
-              
-              // Удаляем убитого врага
               target.parentNode.removeChild(target);
               
-              // Проверяем победу
               if (window.score >= 3) {
                 document.querySelector('#infoText').setAttribute('value', 'YOU WIN! ALL ENEMIES DESTROYED');
-                document.querySelector('#infoText').setAttribute('color', '#00FF00'); // Зеленый текст
+                document.querySelector('#infoText').setAttribute('color', '#00FF00');
               } else {
                 document.querySelector('#infoText').setAttribute('value', 'KILLED: ' + window.score + ' / 3');
               }
@@ -45,28 +42,40 @@
         }
       });
 
-      // 2. КОМПОНЕНТ GPS (Спавн объектов вокруг игрока)
-      AFRAME.registerComponent('gps-spawner', {
+      // 2. ГЛАВНЫЙ МЕНЕДЖЕР AR (Принудительный вызов GPS по клику)
+      AFRAME.registerComponent('ar-manager', {
         init: function () {
-          // Ждем системного события AR.js, когда он сам получит геопозицию
-          window.addEventListener('gps-camera-update-position', (e) => {
-            // Чтобы не спавнить бесконечно, делаем проверку
-            if (gpsLoaded) return; 
-            gpsLoaded = true;
+          let startBtn = document.getElementById('start-btn');
+          let uiOverlay = document.getElementById('ui-overlay');
+          let infoText = document.querySelector('#infoText');
 
-            // Берем твои точные координаты в эту секунду
-            let lat = e.detail.position.latitude;
-            let lon = e.detail.position.longitude;
+          // Ждем клика пользователя, чтобы обойти блокировку Apple
+          startBtn.addEventListener('click', () => {
+            startBtn.innerText = "ПОЛУЧАЕМ КООРДИНАТЫ...";
+            
+            // ПРИНУДИТЕЛЬНО вызываем системное окно запроса GPS
+            navigator.geolocation.getCurrentPosition(
+              // Если пользователь нажал "Разрешить"
+              (position) => {
+                uiOverlay.style.display = 'none'; // Прячем меню
+                infoText.setAttribute('value', 'ENEMIES DETECTED! LOOK AROUND.');
+                
+                let lat = position.coords.latitude;
+                let lon = position.coords.longitude;
+                let offset = 0.00005; // Примерно 5 метров
 
-            document.querySelector('#infoText').setAttribute('value', 'ENEMIES DETECTED! LOOK AROUND.');
-
-            // Смещение координат. 0.00005 градусов — это примерно 5 метров.
-            let offset = 0.00005; 
-
-            // Ставим трех врагов вокруг тебя по компасу
-            this.spawnEnemy(lat + offset, lon); // Спереди
-            this.spawnEnemy(lat, lon + offset); // Справа
-            this.spawnEnemy(lat - offset, lon - offset); // Сзади-слева
+                // Спавним 3 врагов вокруг
+                this.spawnEnemy(lat + offset, lon); 
+                this.spawnEnemy(lat, lon + offset); 
+                this.spawnEnemy(lat - offset, lon - offset); 
+              },
+              // Если пользователь запретил или произошла ошибка
+              (error) => {
+                alert("Ошибка! Вы должны разрешить доступ к GPS для игры.");
+                startBtn.innerText = "РАЗРЕШИТЬ GPS И НАЧАТЬ";
+              },
+              { enableHighAccuracy: true } // Просим максимально точный GPS
+            );
           });
         },
         
@@ -74,44 +83,73 @@
           let scene = document.querySelector('a-scene');
           let enemy = document.createElement('a-entity');
           
-          // Я делаю их сферами. Если хочешь модель дракона, напиши тут: 
-          // enemy.setAttribute('gltf-model', 'assets/dragon.glb');
           enemy.setAttribute('geometry', 'primitive: sphere; radius: 1');
           enemy.setAttribute('material', 'color: purple');
-          
-          enemy.setAttribute('class', 'enemy'); // Обязательно для прицела
-          
-          // Привязываем к вычисленным GPS координатам
+          enemy.setAttribute('class', 'enemy');
           enemy.setAttribute('gps-entity-place', `latitude: ${lat}; longitude: ${lon}`);
-          
-          // Поднимаем на уровень глаз (1.5 метра над землей)
           enemy.setAttribute('position', '0 1.5 0');
           
           scene.appendChild(enemy);
         }
       });
     </script>
+
+    <!-- Стили для стартового экрана поверх AR -->
+    <style>
+      #ui-overlay {
+        position: absolute;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        font-family: sans-serif;
+      }
+      #start-btn {
+        padding: 20px 40px;
+        font-size: 20px;
+        font-weight: bold;
+        background-color: #00FF00;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        box-shadow: 0 4px 10px rgba(0,255,0,0.5);
+      }
+      .warning { color: white; margin-bottom: 20px; text-align: center; padding: 0 20px;}
+    </style>
   </head>
 
   <body style="margin: 0; overflow: hidden;">
-    <!-- arjs: используем камеру. debugUIEnabled: false убирает лишние надписи разработчика -->
+    
+    <!-- СТАРТОВОЕ МЕНЮ (Пока не нажмешь, игра не начнется и GPS не запросится) -->
+    <div id="ui-overlay">
+      <div class="warning">
+        <h2>AR ЗАЩИТА БАЗЫ</h2>
+        <p>Для игры необходимо разрешить доступ к камере и геолокации (GPS).</p>
+      </div>
+      <button id="start-btn">РАЗРЕШИТЬ И НАЧАТЬ</button>
+    </div>
+
+    <!-- arjs: debugUIEnabled: false отключает лишний текст. -->
     <a-scene 
       vr-mode-ui="enabled: false"
       embedded
       arjs="sourceType: webcam; debugUIEnabled: false;"
-      gps-spawner shooter>
+      ar-manager shooter>
 
       <a-assets>
         <a-asset-item id="turret-model" src="assets/turel.glb"></a-asset-item>
       </a-assets>
 
-      <!-- КАМЕРА AR.JS -->
+      <!-- КАМЕРА -->
       <a-camera gps-camera rotation-reader>
         
-        <!-- Информационный текст (всегда висит перед экраном) -->
-        <a-text id="infoText" value="Waiting for GPS..." position="0 0.5 -2" align="center" color="yellow" width="4"></a-text>
+        <!-- Текст статуса -->
+        <a-text id="infoText" value="Waiting for start..." position="0 0.5 -2" align="center" color="yellow" width="4"></a-text>
 
-        <!-- Прицел для стрельбы -->
+        <!-- ПРИЦЕЛ -->
         <a-entity id="cursor" 
                   cursor="rayOrigin: entity; fuse: false"
                   raycaster="objects: .enemy"
@@ -120,9 +158,7 @@
                   material="color: red; shader: flat">
         </a-entity>
 
-        <!-- ТУРЕЛЬ -->
-        <!-- Она вложена внутрь <a-camera>, поэтому она ВСЕГДА перемещается за тобой. -->
-        <!-- Позиция: 0 (центр), -1 (под ногами), -1.5 (чуть-чуть вынесена вперед, чтобы было видно дуло) -->
+        <!-- ТУРЕЛЬ (Она внутри камеры, поэтому "ходит" и "крутится" вместе с тобой) -->
         <a-entity id="player-turret" 
                   gltf-model="#turret-model" 
                   position="0 -1 -1.5" 
@@ -131,7 +167,6 @@
         </a-entity>
 
       </a-camera>
-
     </a-scene>
   </body>
 </html>
