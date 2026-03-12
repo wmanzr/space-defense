@@ -10,7 +10,7 @@
     <script>
       window.score = 0;
 
-      // 1. КОМПОНЕНТ СТРЕЛЬБЫ
+      // 1. КОМПОНЕНТ СТРЕЛЬБЫ (Такой же, как в index)
       AFRAME.registerComponent('shooter', {
         init: function () {
           window.addEventListener('touchstart', this.shoot.bind(this));
@@ -20,11 +20,9 @@
           let raycaster = document.querySelector('#cursor').components.raycaster;
           let intersected = raycaster.intersectedEls;
 
-          // Отдача турели
           let turret = document.querySelector('#player-turret');
           if(turret) turret.emit('fire');
 
-          // Проверка попадания
           if (intersected.length > 0) {
             let target = intersected[0];
             if (target.classList.contains('enemy')) {
@@ -42,39 +40,49 @@
         }
       });
 
-      // 2. ГЛАВНЫЙ МЕНЕДЖЕР AR (Принудительный вызов GPS по клику)
+      // 2. ГЛАВНЫЙ МЕНЕДЖЕР AR (Чистый запуск GPS без конфликтов)
       AFRAME.registerComponent('ar-manager', {
         init: function () {
           let startBtn = document.getElementById('start-btn');
           let uiOverlay = document.getElementById('ui-overlay');
           let infoText = document.querySelector('#infoText');
 
-          // Ждем клика пользователя, чтобы обойти блокировку Apple
           startBtn.addEventListener('click', () => {
             startBtn.innerText = "ПОЛУЧАЕМ КООРДИНАТЫ...";
             
-            // ПРИНУДИТЕЛЬНО вызываем системное окно запроса GPS
+            // Вызываем системный диалог GPS (по клику Safari разрешит это 100%)
             navigator.geolocation.getCurrentPosition(
-              // Если пользователь нажал "Разрешить"
               (position) => {
-                uiOverlay.style.display = 'none'; // Прячем меню
+                // Если ты нажал "Разрешить":
+                uiOverlay.style.display = 'none';
                 infoText.setAttribute('value', 'ENEMIES DETECTED! LOOK AROUND.');
+
+                // ВАЖНО: Только теперь подключаем компонент gps-camera к камере.
+                // Так как доступ уже получен секунду назад, AR.js ничего не спросит и просто заработает!
+                document.getElementById('main-camera').setAttribute('gps-camera', '');
                 
                 let lat = position.coords.latitude;
                 let lon = position.coords.longitude;
-                let offset = 0.00005; // Примерно 5 метров
+                let offset = 0.00005; // Примерно 5 метров от тебя
 
-                // Спавним 3 врагов вокруг
+                // Спавним 3 драконов (сферы) вокруг
                 this.spawnEnemy(lat + offset, lon); 
                 this.spawnEnemy(lat, lon + offset); 
                 this.spawnEnemy(lat - offset, lon - offset); 
               },
-              // Если пользователь запретил или произошла ошибка
               (error) => {
-                alert("Ошибка! Вы должны разрешить доступ к GPS для игры.");
-                startBtn.innerText = "РАЗРЕШИТЬ GPS И НАЧАТЬ";
+                // Если произошла ошибка, теперь мы точно знаем КАКАЯ
+                let msg = "Неизвестная ошибка";
+                if (error.code === 1) msg = "Доступ запрещен. Разрешите GPS в настройках Safari.";
+                if (error.code === 2) msg = "Сигнал GPS не найден. Выйдите на балкон или улицу.";
+                if (error.code === 3) msg = "Превышено время ожидания. Нажмите еще раз.";
+                
+                alert("Ошибка: " + msg);
+                startBtn.innerText = "РАЗРЕШИТЬ И НАЧАТЬ";
               },
-              { enableHighAccuracy: true } // Просим максимально точный GPS
+              // timeout: 10000 нужен, чтобы если телефон дома не ловит спутники, 
+              // он не завис бесконечно, а выдал ошибку через 10 секунд
+              { enableHighAccuracy: true, timeout: 10000 } 
             );
           });
         },
@@ -94,28 +102,16 @@
       });
     </script>
 
-    <!-- Стили для стартового экрана поверх AR -->
     <style>
       #ui-overlay {
-        position: absolute;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0, 0, 0, 0.85);
-        z-index: 9999;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.85); z-index: 9999;
+        display: flex; flex-direction: column; justify-content: center; align-items: center;
         font-family: sans-serif;
       }
       #start-btn {
-        padding: 20px 40px;
-        font-size: 20px;
-        font-weight: bold;
-        background-color: #00FF00;
-        border: none;
-        border-radius: 10px;
-        cursor: pointer;
-        box-shadow: 0 4px 10px rgba(0,255,0,0.5);
+        padding: 20px 40px; font-size: 20px; font-weight: bold;
+        background-color: #00FF00; border: none; border-radius: 10px; cursor: pointer;
       }
       .warning { color: white; margin-bottom: 20px; text-align: center; padding: 0 20px;}
     </style>
@@ -123,7 +119,7 @@
 
   <body style="margin: 0; overflow: hidden;">
     
-    <!-- СТАРТОВОЕ МЕНЮ (Пока не нажмешь, игра не начнется и GPS не запросится) -->
+    <!-- СТАРТОВОЕ МЕНЮ -->
     <div id="ui-overlay">
       <div class="warning">
         <h2>AR ЗАЩИТА БАЗЫ</h2>
@@ -132,7 +128,7 @@
       <button id="start-btn">РАЗРЕШИТЬ И НАЧАТЬ</button>
     </div>
 
-    <!-- arjs: debugUIEnabled: false отключает лишний текст. -->
+    <!-- arjs работает тихо и ждет -->
     <a-scene 
       vr-mode-ui="enabled: false"
       embedded
@@ -143,13 +139,11 @@
         <a-asset-item id="turret-model" src="assets/turel.glb"></a-asset-item>
       </a-assets>
 
-      <!-- КАМЕРА -->
-      <a-camera gps-camera rotation-reader>
+      <!-- КАМЕРА (Специально убрал отсюда gps-camera, скрипт добавит его сам) -->
+      <a-camera id="main-camera" rotation-reader>
         
-        <!-- Текст статуса -->
         <a-text id="infoText" value="Waiting for start..." position="0 0.5 -2" align="center" color="yellow" width="4"></a-text>
 
-        <!-- ПРИЦЕЛ -->
         <a-entity id="cursor" 
                   cursor="rayOrigin: entity; fuse: false"
                   raycaster="objects: .enemy"
@@ -158,7 +152,6 @@
                   material="color: red; shader: flat">
         </a-entity>
 
-        <!-- ТУРЕЛЬ (Она внутри камеры, поэтому "ходит" и "крутится" вместе с тобой) -->
         <a-entity id="player-turret" 
                   gltf-model="#turret-model" 
                   position="0 -1 -1.5" 
