@@ -197,73 +197,77 @@
         killedDragons: 0,
         playerLat: null,
         playerLon: null,
-        dragonsSpawned: false
+        dragonsSpawned: false,
+        STATIC_LAT: 55.768236,
+        STATIC_LON: 37.502719
       };
 
       // ─────────────────────────────────────────────
       //  ЗАПРОС РАЗРЕШЕНИЙ (iOS Safari требует явного тапа)
       // ─────────────────────────────────────────────
       window.requestPermissions = async function() {
+        // Показываем диалог выбора координат
+        document.querySelector('#permissions-overlay').style.display = 'none';
+        document.querySelector('#coord-choice').style.display = 'flex';
+        };
+
+        window.useStaticCoords = function() {
+        document.querySelector('#coord-choice').style.display = 'none';
+        let lat = window.AR_GAME.STATIC_LAT;
+        let lon = window.AR_GAME.STATIC_LON;
+        document.querySelector('#gps-info').innerHTML =
+            '📍 <b>Статичные координаты</b><br>' +
+            'LAT: ' + lat.toFixed(6) + '<br>' +
+            'LON: ' + lon.toFixed(6) + '<br>' +
+            '<span style="color:#ffcc00">🐉 Ищи драконов вокруг себя!</span>';
+        window.spawnDragons(lat, lon);
+        window.AR_GAME.state = 'playing';
+        requestOrientationPermission();
+        };
+
+        window.useGpsCoords = async function() {
+        document.querySelector('#coord-choice').style.display = 'none';
+        document.querySelector('#permissions-overlay').style.display = 'flex';
         let statusEl = document.querySelector('#perm-status');
         statusEl.textContent = 'Запрашиваем разрешения…';
 
-        // 1) DeviceOrientation (iOS 13+)
         if (typeof DeviceOrientationEvent !== 'undefined' &&
             typeof DeviceOrientationEvent.requestPermission === 'function') {
-          try {
+            try {
             let res = await DeviceOrientationEvent.requestPermission();
             if (res !== 'granted') {
-              statusEl.textContent = '❌ Ориентация отклонена. Обновите страницу и разрешите.';
-              return;
+                statusEl.textContent = '❌ Ориентация отклонена.'; return;
             }
-          } catch(e) {
-            statusEl.textContent = '❌ Ошибка ориентации: ' + e.message;
-            return;
-          }
+            } catch(e) { statusEl.textContent = '❌ Ошибка: ' + e.message; return; }
         }
 
-        // 2) DeviceMotion (iOS 13+)
-        if (typeof DeviceMotionEvent !== 'undefined' &&
-            typeof DeviceMotionEvent.requestPermission === 'function') {
-          try {
-            let res = await DeviceMotionEvent.requestPermission();
-            // не критично если отклонено — продолжаем
-          } catch(e) {}
-        }
-
-        // 3) Геолокация
         statusEl.textContent = '📍 Получаем GPS…';
-        if (!navigator.geolocation) {
-          statusEl.textContent = '❌ Геолокация не поддерживается';
-          return;
-        }
-
         navigator.geolocation.getCurrentPosition(
-          function(pos) {
+            function(pos) {
             window.AR_GAME.playerLat = pos.coords.latitude;
             window.AR_GAME.playerLon = pos.coords.longitude;
-
-            // Показываем координаты
-            let gpsEl = document.querySelector('#gps-info');
-            gpsEl.innerHTML =
-              '📍 <b>GPS получен!</b><br>' +
-              'LAT: ' + pos.coords.latitude.toFixed(6) + '<br>' +
-              'LON: ' + pos.coords.longitude.toFixed(6) + '<br>' +
-              '<span style="color:#ffcc00">🐉 Ищи драконов вокруг себя!</span>';
-
-            // Прячем оверлей разрешений
             document.querySelector('#permissions-overlay').style.display = 'none';
-
-            // Спавним драконов
+            document.querySelector('#gps-info').innerHTML =
+                '📍 <b>GPS получен!</b><br>' +
+                'LAT: ' + pos.coords.latitude.toFixed(6) + '<br>' +
+                'LON: ' + pos.coords.longitude.toFixed(6) + '<br>' +
+                '<span style="color:#ffcc00">🐉 Ищи драконов вокруг себя!</span>';
             window.spawnDragons(pos.coords.latitude, pos.coords.longitude);
             window.AR_GAME.state = 'playing';
-          },
-          function(err) {
+            },
+            function(err) {
             statusEl.textContent = '❌ GPS ошибка: ' + err.message;
-          },
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+            },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
-      };
+        };
+
+        async function requestOrientationPermission() {
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try { await DeviceOrientationEvent.requestPermission(); } catch(e) {}
+        }
+        }
 
       // ─────────────────────────────────────────────
       //  ПЕРЕВОД МЕТРОВ В ГРАДУСЫ
@@ -519,5 +523,49 @@
       </button>
     </div>
 
+    <!-- ДИАЛОГ ВЫБОРА КООРДИНАТ -->
+<div id="coord-choice" style="
+  display: none;
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.92);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 2100;
+  padding: 30px;
+  text-align: center;
+  font-family: 'Courier New', monospace;
+  color: white;">
+  <h2 style="color: cyan; font-size: 22px; margin-bottom: 12px; text-shadow: 0 0 12px cyan;">
+    📍 КООРДИНАТЫ
+  </h2>
+  <p style="color: #aaa; font-size: 14px; margin-bottom: 28px; line-height: 1.7;">
+    Использовать сохранённые координаты<br>
+    или попробовать определить GPS?
+  </p>
+  <button onclick="window.useStaticCoords()" style="
+    background: linear-gradient(135deg, #00ff88, #00aaff);
+    color: black; border: none;
+    padding: 14px 30px; margin-bottom: 14px;
+    font-size: 16px; font-weight: bold;
+    font-family: 'Courier New', monospace;
+    border-radius: 8px; cursor: pointer;
+    letter-spacing: 1px; width: 260px;
+    box-shadow: 0 0 16px rgba(0,255,136,0.4);">
+    📌 МОИ КООРДИНАТЫ<br>
+    <span style="font-size:12px; opacity:0.7">55.768236, 37.502719</span>
+  </button>
+  <button onclick="window.useGpsCoords()" style="
+    background: linear-gradient(135deg, #ff8800, #ffcc00);
+    color: black; border: none;
+    padding: 14px 30px;
+    font-size: 16px; font-weight: bold;
+    font-family: 'Courier New', monospace;
+    border-radius: 8px; cursor: pointer;
+    letter-spacing: 1px; width: 260px;
+    box-shadow: 0 0 16px rgba(255,136,0,0.4);">
+    🛰️ ОПРЕДЕЛИТЬ GPS
+  </button>
+</div>
   </body>
 </html>
