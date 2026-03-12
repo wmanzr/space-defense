@@ -434,6 +434,16 @@
             'property: position; from: 0 0 0; to: 0 0.6 0; dir: alternate; dur: 1400; loop: true; easing: easeInOutSine');
           d.setAttribute('animation__rotate',
             'property: rotation; from: 0 0 0; to: 0 360 0; dur: 9000; loop: true; easing: linear');
+
+            // Текст маркер (убери когда всё заработает)
+            var label = document.createElement('a-text');
+            label.setAttribute('value', 'DRAGON ' + i);
+            label.setAttribute('position', '0 3 0');
+            label.setAttribute('color', 'red');
+            label.setAttribute('scale', '10 10 10');
+            label.setAttribute('align', 'center');
+            d.appendChild(label);
+
           scene.appendChild(d);
         });
       }
