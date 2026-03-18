@@ -381,12 +381,12 @@
 
       // Конфигурация ингредиентов
       var INGREDIENTS = [
-        { file: 'cabbage.glb',    name: 'Капуста',  good: false, emoji: '🥬', scale: '5 5 5' },
-        { file: 'cheese.glb',     name: 'Сыр',      good: true,  emoji: '🧀', scale: '5 5 5' },
-        { file: 'garlic.glb',     name: 'Чеснок',   good: false, emoji: '🧄', scale: '5 5 5' },
-        { file: 'pizza box.glb',  name: 'Пицца',    good: true,  emoji: '📦', scale: '5 5 5' },
-        { file: 'pumpkin.glb',    name: 'Тыква',    good: false, emoji: '🎃', scale: '5 5 5' },
-        { file: 'tomato.glb',     name: 'Томат',    good: true,  emoji: '🍅', scale: '5 5 5' }
+        { file: 'cabbage.glb',    name: 'Капуста',  good: false, emoji: '🥬', scale: '0.5 0.5 0.5' },
+        { file: 'cheese.glb',     name: 'Сыр',      good: true,  emoji: '🧀', scale: '0.5 0.5 0.5' },
+        { file: 'garlic.glb',     name: 'Чеснок',   good: false, emoji: '🧄', scale: '0.5 0.5 0.5' },
+        { file: 'pizza box.glb',  name: 'Пицца',    good: true,  emoji: '📦', scale: '0.5 0.5 0.5' },
+        { file: 'pumpkin.glb',    name: 'Тыква',    good: false, emoji: '🎃', scale: '0.5 0.5 0.5' },
+        { file: 'tomato.glb',     name: 'Томат',    good: true,  emoji: '🍅', scale: '0.5 0.5 0.5' }
       ];
 
       // Позиции 6 объектов вокруг игрока (x, y, z)
@@ -526,11 +526,6 @@
         wrapper.appendChild(scene);
 
         scene.addEventListener('loaded', function() {
-            var testBox = document.createElement('a-box');
-testBox.setAttribute('color', 'red');
-testBox.setAttribute('position', '0 0 -3');
-testBox.setAttribute('scale', '1 1 1');
-scene.appendChild(testBox);
           spawnIngredients();
         });
       }

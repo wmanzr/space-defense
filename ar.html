@@ -414,14 +414,15 @@
         var scene = document.getElementById('ar-scene');
         if (!scene) return;
 
-        var x = (Math.random() - 0.5) * 10;
+        var x = (Math.random() - 0.5) * 20;
         var ball = document.createElement('a-sphere');
         var id = 'ball-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
         ball.setAttribute('id', id);
         ball.setAttribute('class', 'enemy');
         ball.setAttribute('color', '#ff3333');
-        ball.setAttribute('radius', '0.5');
-        ball.setAttribute('position', x + ' 12 -8');
+        ball.setAttribute('radius', '1');
+        var z = -8 - Math.random() * 8;
+        ball.setAttribute('position', x + ' 12 ' + z);
         ball.setAttribute('visible', 'true');
         ball.setAttribute('shadow', '');
         ball.setAttribute('animation__fall',
