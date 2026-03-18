@@ -19,6 +19,7 @@
       }
       #ar-scene-wrapper.active { display: block; }
 
+      /* HUD поверх AR сцены */
       #hud {
         position: fixed;
         top: 0; left: 0;
@@ -89,7 +90,7 @@
       }
       #shoot-flash.flash { opacity: 1; }
 
-      /* ── ОВЕРЛЕИ ── */
+      /* Оверлеи (стартовый, координаты, GPS, финал) */
       .overlay {
         position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
@@ -208,10 +209,10 @@
     <!-- ЭКРАН 1: СТАРТ -->
     <div id="screen-start" class="overlay">
       <div class="stars" id="stars-bg"></div>
-      <h2>🐉 DRAGON HUNTER AR</h2>
+      <h2>🔴 SPACE DEFENSE AR</h2>
       <p>
-        Охота на драконов в реальном мире.<br>
-        Найди и уничтожь всех трёх!<br><br>
+        Шары падают прямо перед тобой.<br>
+        Наводи прицел и стреляй — не пропусти ни одного!<br><br>
         Потребуется доступ к:<br>
         📷 Камере &nbsp;&nbsp; 📍 GPS &nbsp;&nbsp; 📱 Датчикам
       </p>
@@ -241,10 +242,10 @@
       <div id="gps-status">Ожидаем разрешения…</div>
     </div>
 
-    <!-- ЭКРАН ПОБЕДЫ -->
+    <!-- ЭКРАН КОНЦА ИГРЫ (game over или победа) -->
     <div id="screen-win" class="overlay">
-      <h1>🏆 ПОБЕДА!</h1>
-      <p style="color:#aaa; font-size:15px; margin-bottom:6px;">Все драконы уничтожены!</p>
+      <h1>💥 GAME OVER</h1>
+      <p style="color:#aaa; font-size:15px; margin-bottom:6px;">Шар долетел до земли!</p>
       <div class="win-score" id="win-score-text">SCORE: 0</div>
       <button class="btn btn-red" onclick="restartGame()">🔄 RESTART</button>
     </div>
@@ -255,13 +256,13 @@
     <!-- HUD -->
     <div id="hud">
       <div id="crosshair"><div class="crosshair-ring"></div></div>
-      <div id="score-display">🐉 0 / 3 &nbsp; SCORE: 0</div>
+      <div id="score-display">SCORE: 0</div>
       <div id="gps-info">📡 Загрузка…</div>
       <div id="shoot-flash"></div>
     </div>
 
     <script>
-      // ── СОСТОЯНИЕ ──
+      // Состояние игры
       var GAME = {
         state: 'menu',
         score: 0,
@@ -272,7 +273,7 @@
         STATIC_LON: 37.502719
       };
 
-      // Звёзды
+      // Звёзды на стартовом экране
       (function() {
         var bg = document.getElementById('stars-bg');
         for (var i = 0; i < 80; i++) {
@@ -285,8 +286,7 @@
         }
       })();
 
-      // ── ШАГ 1: Нажали НАЧАТЬ AR ──
-      // Запрашиваем ориентацию здесь — это единственный момент внутри тап-хендлера
+      // Шаг 1: запрос датчика ориентации (iOS), затем выбор координат
       function onStartAR() {
         if (typeof DeviceOrientationEvent !== 'undefined' &&
             typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -298,13 +298,13 @@
         }
       }
 
-      // ── ШАГ 2а: Статичные координаты ──
+      // Шаг 2а: использовать сохранённые координаты
       function useStaticCoords() {
         showScreen(null);
         launchAR(GAME.STATIC_LAT, GAME.STATIC_LON, 'static');
       }
 
-      // ── ШАГ 2б: GPS ──
+      // Шаг 2б: получить GPS
       function useGpsCoords() {
         showScreen('screen-gps');
         document.getElementById('gps-status').textContent = 'Запрашиваем GPS…';
@@ -325,7 +325,7 @@
         );
       }
 
-      // ── Переключение экранов ──
+      // Переключение оверлеев
       function showScreen(id) {
         ['screen-start','screen-coords','screen-gps','screen-win'].forEach(function(sid) {
           document.getElementById(sid).style.display = 'none';
@@ -333,7 +333,7 @@
         if (id) document.getElementById(id).style.display = 'flex';
       }
 
-      // ── ШАГ 3: Запуск AR ──
+      // Шаг 3: запуск AR — показываем сцену и HUD
       function launchAR(lat, lon, source) {
         document.getElementById('ar-scene-wrapper').style.display = 'block';
         document.getElementById('hud').classList.add('active');
@@ -342,16 +342,14 @@
           (source === 'static' ? '📌 <b>Статичные координаты</b>' : '📍 <b>GPS получен</b>') + '<br>' +
           'LAT: ' + lat.toFixed(6) + '<br>' +
           'LON: ' + lon.toFixed(6) + '<br>' +
-          '<span style="color:#ffcc00">🐉 Ищи драконов вокруг!</span>';
+          '<span style="color:#ffcc00">🔴 Шары падают — стреляй!</span>';
 
         buildScene(lat, lon);
         GAME.state = 'playing';
         updateScore();
       }
 
-      // ── Создаём A-Frame сцену динамически ──
-      // Это ключевой момент: сцена создаётся ТОЛЬКО после тапа,
-      // поэтому AR.js не успевает запросить камеру до нажатия кнопки
+      // Создание A-Frame сцены динамически (камера запрашивается только здесь)
       function buildScene(lat, lon) {
         var wrapper = document.getElementById('ar-scene-wrapper');
         wrapper.style.position = 'fixed';
@@ -396,63 +394,55 @@
         wrapper.appendChild(scene);
 
         scene.addEventListener('loaded', function() {
-        startBallSpawner();
-      });
+          startBallSpawner();
+        });
       }
 
-      // ── Смещение метров в градусы ──
-      function offsetLatLon(lat, lon, northM, eastM) {
-        var dLat = northM / 111320;
-        var dLon = eastM / (111320 * Math.cos(lat * Math.PI / 180));
-        return { lat: lat + dLat, lon: lon + dLon };
-      }
-
+      // Спавнер шаров
       var ballSpawnerInterval = null;
 
-function startBallSpawner() {
-  if (ballSpawnerInterval) clearInterval(ballSpawnerInterval);
-  ballSpawnerInterval = setInterval(function() {
-    if (GAME.state !== 'playing') return;
-    spawnBall();
-  }, 1500);
-}
+      function startBallSpawner() {
+        if (ballSpawnerInterval) clearInterval(ballSpawnerInterval);
+        ballSpawnerInterval = setInterval(function() {
+          if (GAME.state !== 'playing') return;
+          spawnBall();
+        }, 1500);
+      }
 
-function spawnBall() {
-  var scene = document.getElementById('ar-scene');
-  if (!scene) return;
+      // Создание одного шара
+      function spawnBall() {
+        var scene = document.getElementById('ar-scene');
+        if (!scene) return;
 
-  // Случайная позиция по x перед игроком, высоко над головой
-  var x = (Math.random() - 0.5) * 10;  // от -5 до +5
-  var ball = document.createElement('a-sphere');
-  var id = 'ball-' + Date.now() + '-' + Math.floor(Math.random()*1000);
-  ball.setAttribute('id', id);
-  ball.setAttribute('class', 'enemy');
-  ball.setAttribute('color', '#ff3333');
-  ball.setAttribute('radius', '0.5');
-  ball.setAttribute('position', x + ' 12 -8');
-  ball.setAttribute('visible', 'true');
-  ball.setAttribute('shadow', '');
+        var x = (Math.random() - 0.5) * 10;
+        var ball = document.createElement('a-sphere');
+        var id = 'ball-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+        ball.setAttribute('id', id);
+        ball.setAttribute('class', 'enemy');
+        ball.setAttribute('color', '#ff3333');
+        ball.setAttribute('radius', '0.5');
+        ball.setAttribute('position', x + ' 12 -8');
+        ball.setAttribute('visible', 'true');
+        ball.setAttribute('shadow', '');
+        ball.setAttribute('animation__fall',
+          'property: position;' +
+          'from: ' + x + ' 12 -8;' +
+          'to: '   + x + ' -3 -8;' +
+          'dur: 3000; easing: easeInQuad; loop: false');
 
-  // Анимация падения вниз
-  ball.setAttribute('animation__fall',
-    'property: position;' +
-    'from: ' + x + ' 12 -8;' +
-    'to: '   + x + ' -3 -8;' +
-    'dur: 3000; easing: easeInQuad; loop: false');
+        scene.appendChild(ball);
 
-  scene.appendChild(ball);
+        // Если шар долетел до низа — конец игры
+        setTimeout(function() {
+          var b = document.getElementById(id);
+          if (b && GAME.state === 'playing') {
+            if (b.parentNode) b.parentNode.removeChild(b);
+            endGame();
+          }
+        }, 3100);
+      }
 
-  // Удаляем шар если долетел до низа — game over
-  setTimeout(function() {
-    var b = document.getElementById(id);
-    if (b && GAME.state === 'playing') {
-      if (b.parentNode) b.parentNode.removeChild(b);
-      endGame();
-    }
-  }, 3100);
-}
-
-      // ── Стрельба ──
+      // Обработка тапа / клика — стрельба
       document.addEventListener('click', function(e) {
         if (e.target.closest('.overlay')) return;
         shoot();
@@ -484,41 +474,36 @@ function spawnBall() {
         }
       }
 
+      // Попадание в шар
       function killBall(el) {
-  el.setAttribute('animation__die', 'property: scale; to: 0 0 0; dur: 200; easing: easeInBack');
-  setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 220);
-  GAME.score += 10;
-  updateScore();
-}
+        el.setAttribute('animation__die', 'property: scale; to: 0 0 0; dur: 200; easing: easeInBack');
+        setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+        GAME.score += 10;
+        updateScore();
+      }
 
       function updateScore() {
         var el = document.getElementById('score-display');
-  if (el) el.textContent = 'SCORE: ' + GAME.score; }
+        if (el) el.textContent = 'SCORE: ' + GAME.score;
+      }
 
-function endGame() {
-  if (GAME.state !== 'playing') return;
-  GAME.state = 'gameover';
-  if (ballSpawnerInterval) { clearInterval(ballSpawnerInterval); ballSpawnerInterval = null; }
-  // Убираем все шары
-  document.querySelectorAll('.enemy').forEach(function(b){
-    if (b.parentNode) b.parentNode.removeChild(b);
-  });
-  // Показываем финальный счёт на экране победы (переиспользуем)
-  document.getElementById('win-score-text').textContent = 'SCORE: ' + GAME.score;
-  document.getElementById('screen-win').querySelector('h1').textContent = '💥 GAME OVER';
-  document.getElementById('screen-win').style.display = 'flex';
-}
-
-
-      function showWin() {
-        GAME.state = 'win';
+      // Конец игры — шар долетел до земли
+      function endGame() {
+        if (GAME.state !== 'playing') return;
+        GAME.state = 'gameover';
+        if (ballSpawnerInterval) { clearInterval(ballSpawnerInterval); ballSpawnerInterval = null; }
+        document.querySelectorAll('.enemy').forEach(function(b) {
+          if (b.parentNode) b.parentNode.removeChild(b);
+        });
         document.getElementById('win-score-text').textContent = 'SCORE: ' + GAME.score;
+        document.getElementById('screen-win').querySelector('h1').textContent = '💥 GAME OVER';
         document.getElementById('screen-win').style.display = 'flex';
       }
 
+      // Рестарт — возврат на стартовый экран
       function restartGame() {
         if (ballSpawnerInterval) { clearInterval(ballSpawnerInterval); ballSpawnerInterval = null; }
-        document.querySelectorAll('.enemy').forEach(function(el){
+        document.querySelectorAll('.enemy').forEach(function(el) {
           if (el.parentNode) el.parentNode.removeChild(el);
         });
         GAME.state = 'menu';
@@ -532,7 +517,7 @@ function endGame() {
         updateScore();
       }
 
-      // A-Frame компонент: поворот турели
+      // A-Frame: синхронизация поворота турели с камерой
       AFRAME.registerComponent('sync-rotation-ar', {
         tick: function() {
           var cam = document.querySelector('#ar-camera');
