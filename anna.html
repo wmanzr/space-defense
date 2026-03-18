@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <title>Pizza AR</title>
+
+    <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Lato:wght@400;700&display=swap');
+
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { overflow: hidden; background: #1a0a00; font-family: 'Lato', sans-serif; }
+
+      #ar-scene-wrapper {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+      }
+
+      /* HUD поверх AR сцены */
+      #hud {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        pointer-events: none;
+        z-index: 999;
+        display: none;
+      }
+      #hud.active { display: block; }
+
+      /* Прицел */
+      #crosshair {
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: 50px; height: 50px;
+      }
+      #crosshair::before, #crosshair::after {
+        content: '';
+        position: absolute;
+        background: rgba(255, 180, 0, 0.85);
+        border-radius: 2px;
+      }
+      #crosshair::before { width: 2px; height: 100%; top: 0; left: 50%; transform: translateX(-50%); }
+      #crosshair::after  { width: 100%; height: 2px; top: 50%; left: 0; transform: translateY(-50%); }
+      .crosshair-ring {
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: 34px; height: 34px;
+        border: 2px solid rgba(255, 180, 0, 0.5);
+        border-radius: 50%;
+      }
+
+      /* Верхняя панель */
+      #top-bar {
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 20px;
+        background: linear-gradient(to bottom, rgba(30,10,0,0.85), transparent);
+      }
+
+      #score-display {
+        color: #ffcc44;
+        font-size: 18px;
+        font-weight: 700;
+        text-shadow: 0 0 8px rgba(255,180,0,0.6);
+        letter-spacing: 1px;
+      }
+
+      #timer-display {
+        color: #fff;
+        font-size: 22px;
+        font-weight: 700;
+        font-family: 'Playfair Display', serif;
+        text-shadow: 0 0 10px rgba(255,100,0,0.8);
+        letter-spacing: 2px;
+      }
+      #timer-display.danger { color: #ff4444; animation: blink 0.5s infinite alternate; }
+
+      @keyframes blink { from { opacity: 1; } to { opacity: 0.3; } }
+
+      /* Подсказка — нужные ингредиенты */
+      #hint-bar {
+        position: absolute;
+        bottom: 30px; left: 50%;
+        transform: translateX(-50%);
+        background: rgba(30,10,0,0.82);
+        border: 1px solid rgba(255,180,0,0.35);
+        border-radius: 14px;
+        padding: 10px 20px;
+        color: #ffcc44;
+        font-size: 13px;
+        text-align: center;
+        line-height: 1.7;
+        max-width: 320px;
+        white-space: nowrap;
+      }
+      #hint-bar b { color: #fff; }
+
+      /* GPS инфо (маленькое, поверх) */
+      #gps-info {
+        position: absolute;
+        top: 70px; left: 50%;
+        transform: translateX(-50%);
+        color: #aaa;
+        font-size: 11px;
+        text-align: center;
+        line-height: 1.5;
+        background: rgba(0,0,0,0.45);
+        padding: 6px 12px;
+        border-radius: 8px;
+        white-space: nowrap;
+      }
+
+      /* Вспышка попадания */
+      #hit-flash {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        pointer-events: none;
+        opacity: 0;
+        z-index: 900;
+        transition: opacity 0.06s;
+      }
+      #hit-flash.good  { background: rgba(80,255,80,0.2);  opacity: 1; }
+      #hit-flash.bad   { background: rgba(255,40,40,0.35); opacity: 1; }
+
+      /* ── ОВЕРЛЕИ ── */
+      .overlay {
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 3000;
+        text-align: center;
+        padding: 30px;
+        pointer-events: all;
+        color: white;
+        font-family: 'Lato', sans-serif;
+      }
+
+      /* Фоны оверлеев */
+      #screen-start {
+        background:
+          radial-gradient(ellipse at 50% 0%, rgba(180,60,0,0.5) 0%, transparent 60%),
+          radial-gradient(ellipse at 50% 100%, rgba(100,30,0,0.4) 0%, transparent 60%),
+          #1a0800;
+      }
+      #screen-coords { background: rgba(15,5,0,0.97); display: none; }
+      #screen-gps    { background: rgba(15,5,0,0.97); display: none; }
+      #screen-end    { background: rgba(10,0,0,0.92); display: none; }
+
+      /* Декоративная линия */
+      .deco-line {
+        width: 60px; height: 2px;
+        background: linear-gradient(to right, transparent, #ff9900, transparent);
+        margin: 10px auto 18px;
+      }
+
+      .overlay-title {
+        font-family: 'Playfair Display', serif;
+        font-size: 32px;
+        color: #ffcc44;
+        text-shadow: 0 2px 20px rgba(255,140,0,0.6);
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+      }
+      .overlay-sub {
+        font-size: 13px;
+        color: #cc9966;
+        margin-bottom: 0;
+        line-height: 1.8;
+      }
+
+      /* Ингредиенты на стартовом экране */
+      .ingredients-preview {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin: 18px 0 22px;
+        flex-wrap: wrap;
+      }
+      .ing-tag {
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+      }
+      .ing-tag.good { background: rgba(80,200,80,0.2); border: 1px solid #4c4; color: #8f8; }
+      .ing-tag.bad  { background: rgba(200,60,60,0.2); border: 1px solid #c44; color: #f88; }
+
+      /* Кнопки */
+      .btn {
+        display: block;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        font-family: 'Lato', sans-serif;
+        font-weight: 700;
+        letter-spacing: 1px;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
+        transition: transform 0.1s, box-shadow 0.1s;
+      }
+      .btn:active { transform: scale(0.95); }
+
+      .btn-main {
+        background: linear-gradient(135deg, #ff6600, #ffaa00);
+        color: #1a0500;
+        padding: 17px 44px;
+        font-size: 18px;
+        box-shadow: 0 4px 24px rgba(255,100,0,0.5);
+        margin-top: 4px;
+      }
+      .btn-choice {
+        background: rgba(255,255,255,0.07);
+        border: 1px solid rgba(255,150,0,0.4);
+        color: #ffcc66;
+        padding: 15px 0;
+        font-size: 15px;
+        width: 270px;
+        margin-bottom: 12px;
+      }
+      .btn-choice:hover { background: rgba(255,150,0,0.12); }
+      .btn-restart {
+        background: linear-gradient(135deg, #cc3300, #ff6600);
+        color: white;
+        padding: 16px 40px;
+        font-size: 17px;
+        box-shadow: 0 4px 20px rgba(200,50,0,0.5);
+        margin-top: 8px;
+      }
+      .btn-win {
+        background: linear-gradient(135deg, #226600, #44bb00);
+        color: white;
+        padding: 16px 40px;
+        font-size: 17px;
+        box-shadow: 0 4px 20px rgba(50,180,0,0.4);
+        margin-top: 8px;
+      }
+
+      /* Финальный экран */
+      .end-emoji { font-size: 64px; margin-bottom: 10px; }
+      .end-title {
+        font-family: 'Playfair Display', serif;
+        font-size: 34px;
+        margin-bottom: 6px;
+      }
+      .end-title.win  { color: #ffcc44; text-shadow: 0 0 30px rgba(255,200,0,0.6); }
+      .end-title.lose { color: #ff5533; text-shadow: 0 0 30px rgba(255,60,0,0.5); }
+      .end-reason {
+        font-size: 14px;
+        color: #cc9966;
+        margin-bottom: 6px;
+        line-height: 1.6;
+      }
+      .end-score {
+        font-size: 20px;
+        color: #ffcc44;
+        font-weight: 700;
+        margin-bottom: 22px;
+        letter-spacing: 1px;
+      }
+
+      #gps-status {
+        margin-top: 16px;
+        font-size: 13px;
+        color: #cc9966;
+        min-height: 20px;
+      }
+
+      /* Декор пицца-тема на стартовом */
+      .pizza-deco {
+        font-size: 52px;
+        margin-bottom: 6px;
+        filter: drop-shadow(0 0 12px rgba(255,120,0,0.5));
+      }
+    </style>
+  </head>
+
+  <body>
+
+    <!-- ЭКРАН 1: СТАРТ -->
+    <div id="screen-start" class="overlay">
+      <div class="pizza-deco">🍕</div>
+      <div class="overlay-title">PIZZA MASTER AR</div>
+      <div class="deco-line"></div>
+      <p class="overlay-sub">
+        Найди нужные ингредиенты вокруг себя<br>
+        и собери пиццу за 30 секунд!
+      </p>
+
+      <div class="ingredients-preview">
+        <span class="ing-tag good">✅ Сыр</span>
+        <span class="ing-tag good">✅ Пицца</span>
+        <span class="ing-tag good">✅ Томат</span>
+        <span class="ing-tag bad">❌ Капуста</span>
+        <span class="ing-tag bad">❌ Чеснок</span>
+        <span class="ing-tag bad">❌ Тыква</span>
+      </div>
+
+      <button class="btn btn-main" onclick="onStartAR()">🚀 НАЧАТЬ ИГРУ</button>
+
+      <p style="font-size:11px; color:#664433; margin-top:18px; line-height:1.6;">
+        Потребуется: 📷 Камера &nbsp; 📍 GPS &nbsp; 📱 Датчики
+      </p>
+    </div>
+
+    <!-- ЭКРАН 2: ВЫБОР КООРДИНАТ -->
+    <div id="screen-coords" class="overlay">
+      <div class="overlay-title">📍 Координаты</div>
+      <div class="deco-line"></div>
+      <p class="overlay-sub" style="margin-bottom:24px;">
+        Использовать сохранённые координаты<br>
+        или определить GPS автоматически?
+      </p>
+      <button class="btn btn-choice" onclick="useStaticCoords()">
+        📌 Сохранённые координаты<br>
+        <span style="font-size:11px; opacity:0.6; font-weight:400">55.768236, 37.502719</span>
+      </button>
+      <button class="btn btn-choice" onclick="useGpsCoords()">
+        🛰️ Определить GPS автоматически
+      </button>
+    </div>
+
+    <!-- ЭКРАН 3: ПОЛУЧЕНИЕ GPS -->
+    <div id="screen-gps" class="overlay">
+      <div class="overlay-title">📡 GPS</div>
+      <div class="deco-line"></div>
+      <p class="overlay-sub">Разрешите доступ к геолокации<br>в системном диалоге Apple.</p>
+      <div id="gps-status">Ожидаем разрешения…</div>
+    </div>
+
+    <!-- ЭКРАН КОНЦА ИГРЫ -->
+    <div id="screen-end" class="overlay">
+      <div class="end-emoji" id="end-emoji">🍕</div>
+      <div class="end-title" id="end-title">ПОБЕДА!</div>
+      <div class="deco-line"></div>
+      <p class="end-reason" id="end-reason"></p>
+      <div class="end-score" id="end-score"></div>
+      <button class="btn btn-restart" id="btn-end" onclick="restartGame()">🔄 ИГРАТЬ СНОВА</button>
+    </div>
+
+    <!-- A-FRAME СЦЕНА -->
+    <div id="ar-scene-wrapper"></div>
+
+    <!-- HUD -->
+    <div id="hud">
+      <div id="crosshair"><div class="crosshair-ring"></div></div>
+      <div id="top-bar">
+        <div id="score-display">🍕 0 / 3</div>
+        <div id="timer-display">⏱ 30</div>
+      </div>
+      <div id="gps-info">📡 Загрузка…</div>
+      <div id="hint-bar">
+        Нажми на: <b>🧀 Сыр &nbsp; 📦 Пицца &nbsp; 🍅 Томат</b>
+      </div>
+      <div id="hit-flash"></div>
+    </div>
+
+    <script>
+      // Состояние игры
+      var GAME = {
+        state: 'menu',
+        collected: 0,          // собранных нужных ингредиентов
+        totalNeeded: 3,
+        timeLeft: 30,
+        timerInterval: null,
+        STATIC_LAT: 55.768236,
+        STATIC_LON: 37.502719
+      };
+
+      // Конфигурация ингредиентов
+      var INGREDIENTS = [
+        { file: 'cabbage.glb',    name: 'Капуста',  good: false, emoji: '🥬', scale: '0.5 0.5 0.5' },
+        { file: 'cheese.glb',     name: 'Сыр',      good: true,  emoji: '🧀', scale: '0.5 0.5 0.5' },
+        { file: 'garlic.glb',     name: 'Чеснок',   good: false, emoji: '🧄', scale: '0.5 0.5 0.5' },
+        { file: 'pizza box.glb',  name: 'Пицца',    good: true,  emoji: '📦', scale: '0.5 0.5 0.5' },
+        { file: 'pumpkin.glb',    name: 'Тыква',    good: false, emoji: '🎃', scale: '0.5 0.5 0.5' },
+        { file: 'tomato.glb',     name: 'Томат',    good: true,  emoji: '🍅', scale: '0.5 0.5 0.5' }
+      ];
+
+      // Позиции 6 объектов вокруг игрока (x, y, z)
+      var POSITIONS = [
+        { x:  0,   y: 0, z: -5  },
+        { x:  4,   y: 0, z: -4  },
+        { x: -4,   y: 0, z: -4  },
+        { x:  5,   y: 0, z:  2  },
+        { x: -5,   y: 0, z:  2  },
+        { x:  0,   y: 0, z:  5  }
+      ];
+
+      // Шаг 1: запрос датчика ориентации (iOS), затем выбор координат
+      function onStartAR() {
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+          DeviceOrientationEvent.requestPermission()
+            .then(function() { showScreen('screen-coords'); })
+            .catch(function() { showScreen('screen-coords'); });
+        } else {
+          showScreen('screen-coords');
+        }
+      }
+
+      // Шаг 2а: сохранённые координаты
+      function useStaticCoords() {
+        showScreen(null);
+        launchAR(GAME.STATIC_LAT, GAME.STATIC_LON, 'static');
+      }
+
+      // Шаг 2б: GPS
+      function useGpsCoords() {
+        showScreen('screen-gps');
+        document.getElementById('gps-status').textContent = 'Запрашиваем GPS…';
+        if (!navigator.geolocation) {
+          document.getElementById('gps-status').textContent = '❌ Геолокация не поддерживается';
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          function(pos) {
+            showScreen(null);
+            launchAR(pos.coords.latitude, pos.coords.longitude, 'gps');
+          },
+          function(err) {
+            document.getElementById('gps-status').textContent = '❌ ' + err.message;
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+      }
+
+      // Переключение оверлеев
+      function showScreen(id) {
+        ['screen-start','screen-coords','screen-gps','screen-end'].forEach(function(sid) {
+          document.getElementById(sid).style.display = 'none';
+        });
+        if (id) document.getElementById(id).style.display = 'flex';
+      }
+
+      // Шаг 3: запуск AR
+      function launchAR(lat, lon, source) {
+        document.getElementById('ar-scene-wrapper').style.display = 'block';
+        document.getElementById('hud').classList.add('active');
+        document.getElementById('gps-info').textContent =
+          (source === 'static' ? '📌 ' : '📍 ') +
+          lat.toFixed(5) + ', ' + lon.toFixed(5);
+
+        GAME.state = 'playing';
+        GAME.collected = 0;
+        GAME.timeLeft = 30;
+        updateScore();
+        updateTimer();
+        startTimer();
+        buildScene();
+      }
+
+      // Таймер
+      function startTimer() {
+        if (GAME.timerInterval) clearInterval(GAME.timerInterval);
+        GAME.timerInterval = setInterval(function() {
+          if (GAME.state !== 'playing') { clearInterval(GAME.timerInterval); return; }
+          GAME.timeLeft--;
+          updateTimer();
+          if (GAME.timeLeft <= 0) {
+            clearInterval(GAME.timerInterval);
+            endGame(false, 'Время вышло! Пицца не успела собраться 🕐');
+          }
+        }, 1000);
+      }
+
+      function updateTimer() {
+        var el = document.getElementById('timer-display');
+        if (!el) return;
+        el.textContent = '⏱ ' + GAME.timeLeft;
+        if (GAME.timeLeft <= 10) el.classList.add('danger');
+        else el.classList.remove('danger');
+      }
+
+      function updateScore() {
+        var el = document.getElementById('score-display');
+        if (el) el.textContent = '🍕 ' + GAME.collected + ' / ' + GAME.totalNeeded;
+      }
+
+      // Создание A-Frame сцены динамически
+      function buildScene() {
+        var wrapper = document.getElementById('ar-scene-wrapper');
+        wrapper.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;';
+
+        var scene = document.createElement('a-scene');
+        scene.setAttribute('id', 'ar-scene');
+        scene.setAttribute('vr-mode-ui', 'enabled: false');
+        scene.setAttribute('arjs', 'sourceType: webcam; videoTexture: true; debugUIEnabled: false; trackingMethod: best');
+        scene.setAttribute('renderer', 'antialias: true; alpha: true');
+        scene.setAttribute('embedded', '');
+        scene.style.cssText = 'width:100%;height:100%;';
+
+        // Предзагрузка всех моделей
+        var assetsHTML = '<a-assets timeout="10000">';
+        INGREDIENTS.forEach(function(ing) {
+          var safeId = ing.file.replace(/[\s.]/g, '-');
+          assetsHTML += '<a-asset-item id="model-' + safeId + '" src="assets/' + ing.file + '"></a-asset-item>';
+        });
+        assetsHTML += '</a-assets>';
+
+        scene.innerHTML = assetsHTML +
+          '<a-entity light="type: ambient; color: #fff8ee; intensity: 1.0"></a-entity>' +
+          '<a-entity light="type: directional; color: #ffe8cc; intensity: 1.4" position="3 6 2"></a-entity>' +
+          '<a-entity id="ar-camera" camera look-controls="enabled: true" arjs-look-controls="enabled: true" position="0 0 0">' +
+            '<a-entity id="ar-cursor"' +
+              ' cursor="rayOrigin: entity; fuse: false"' +
+              ' raycaster="objects: .ingredient; far: 30"' +
+              ' position="0 0 -1"' +
+              ' geometry="primitive: ring; radiusInner: 0.012; radiusOuter: 0.022"' +
+              ' material="color: #ffbb00; shader: flat; opacity: 0">' +
+            '</a-entity>' +
+          '</a-entity>';
+
+        wrapper.appendChild(scene);
+
+        scene.addEventListener('loaded', function() {
+          spawnIngredients();
+        });
+      }
+
+      // Расстановка ингредиентов вокруг игрока
+      function spawnIngredients() {
+        var scene = document.getElementById('ar-scene');
+        if (!scene) return;
+
+        // Перемешиваем позиции случайно
+        var positions = POSITIONS.slice().sort(function() { return Math.random() - 0.5; });
+
+        INGREDIENTS.forEach(function(ing, i) {
+          var pos = positions[i];
+          var safeId = ing.file.replace(/[\s.]/g, '-');
+
+          var el = document.createElement('a-entity');
+          el.setAttribute('id', 'ing-' + i);
+          el.setAttribute('class', 'ingredient');
+          el.setAttribute('data-good', ing.good ? 'true' : 'false');
+          el.setAttribute('data-name', ing.name);
+          el.setAttribute('data-emoji', ing.emoji);
+          el.setAttribute('gltf-model', '#model-' + safeId);
+          el.setAttribute('scale', ing.scale);
+          el.setAttribute('position', pos.x + ' ' + pos.y + ' ' + pos.z);
+          el.setAttribute('visible', 'true');
+
+          // Покачивание
+          el.setAttribute('animation__hover',
+            'property: position;' +
+            'from: ' + pos.x + ' ' + pos.y + ' ' + pos.z + ';' +
+            'to: '   + pos.x + ' ' + (pos.y + 0.15) + ' ' + pos.z + ';' +
+            'dir: alternate; dur: 1600; loop: true; easing: easeInOutSine');
+
+          // Медленное вращение
+          el.setAttribute('animation__spin',
+            'property: rotation; from: 0 0 0; to: 0 360 0; dur: 6000; loop: true; easing: linear');
+
+          // Подпись над объектом
+          var label = document.createElement('a-text');
+          label.setAttribute('value', ing.emoji + ' ' + ing.name);
+          label.setAttribute('position', '0 1.2 0');
+          label.setAttribute('color', ing.good ? '#88ff88' : '#ff8888');
+          label.setAttribute('scale', '2 2 2');
+          label.setAttribute('align', 'center');
+          label.setAttribute('look-at', '[camera]');
+          el.appendChild(label);
+
+          scene.appendChild(el);
+        });
+      }
+
+      // Обработка тапа — проверяем попадание в ингредиент
+      document.addEventListener('click', function(e) {
+        if (e.target.closest('.overlay')) return;
+        handleTap();
+      });
+      document.addEventListener('touchstart', function(e) {
+        if (e.target.closest('.overlay')) return;
+        e.preventDefault();
+        handleTap();
+      }, { passive: false });
+
+      function handleTap() {
+        if (GAME.state !== 'playing') return;
+
+        var cursor = document.querySelector('#ar-cursor');
+        if (!cursor || !cursor.components.raycaster) return;
+        var hits = cursor.components.raycaster.intersectedEls;
+        if (hits.length === 0) return;
+
+        // Ищем ближайший элемент с классом ingredient
+        var target = null;
+        for (var i = 0; i < hits.length; i++) {
+          var el = hits[i];
+          // Поднимаемся к родителю если попали в дочерний элемент (текст, меш)
+          while (el && !el.classList.contains('ingredient')) {
+            el = el.parentNode;
+          }
+          if (el && el.classList.contains('ingredient')) { target = el; break; }
+        }
+        if (!target) return;
+
+        var isGood = target.getAttribute('data-good') === 'true';
+        var name   = target.getAttribute('data-name');
+        var emoji  = target.getAttribute('data-emoji');
+
+        if (isGood) {
+          collectIngredient(target, name, emoji);
+        } else {
+          wrongIngredient(name, emoji);
+        }
+      }
+
+      // Подобрали правильный ингредиент
+      function collectIngredient(el, name, emoji) {
+        flashScreen('good');
+        el.setAttribute('animation__collect', 'property: scale; to: 0 0 0; dur: 300; easing: easeInBack');
+        setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 320);
+
+        GAME.collected++;
+        updateScore();
+
+        if (GAME.collected >= GAME.totalNeeded) {
+          clearInterval(GAME.timerInterval);
+          setTimeout(function() {
+            endGame(true, emoji + ' ' + name + ' — последний ингредиент!\nПицца готова! 🍕');
+          }, 400);
+        }
+      }
+
+      // Нажали на неправильный
+      function wrongIngredient(name, emoji) {
+        flashScreen('bad');
+        clearInterval(GAME.timerInterval);
+        setTimeout(function() {
+          endGame(false, emoji + ' ' + name + ' — не тот ингредиент!\nПицца испорчена 😱');
+        }, 300);
+      }
+
+      function flashScreen(type) {
+        var el = document.getElementById('hit-flash');
+        el.className = type;
+        setTimeout(function(){ el.className = ''; }, 200);
+      }
+
+      // Конец игры
+      function endGame(win, reason) {
+        if (GAME.state === 'gameover' || GAME.state === 'win') return;
+        GAME.state = win ? 'win' : 'gameover';
+
+        document.getElementById('end-emoji').textContent  = win ? '🍕' : '😢';
+        document.getElementById('end-title').textContent  = win ? 'ПИЦЦА ГОТОВА!' : 'ПРОВАЛ!';
+        document.getElementById('end-title').className    = 'end-title ' + (win ? 'win' : 'lose');
+        document.getElementById('end-reason').textContent = reason;
+        document.getElementById('end-score').textContent  =
+          'Собрано: ' + GAME.collected + ' / ' + GAME.totalNeeded +
+          '   Время: ' + (30 - GAME.timeLeft) + ' сек';
+        document.getElementById('btn-end').className = 'btn ' + (win ? 'btn-win' : 'btn-restart');
+        document.getElementById('screen-end').style.display = 'flex';
+      }
+
+      // Рестарт — возврат на стартовый экран
+      function restartGame() {
+        if (GAME.timerInterval) { clearInterval(GAME.timerInterval); GAME.timerInterval = null; }
+
+        // Удаляем сцену полностью
+        var wrapper = document.getElementById('ar-scene-wrapper');
+        wrapper.innerHTML = '';
+        wrapper.style.display = 'none';
+
+        GAME.state = 'menu';
+        GAME.collected = 0;
+        GAME.timeLeft = 30;
+
+        document.getElementById('hud').classList.remove('active');
+        document.getElementById('timer-display').classList.remove('danger');
+        showScreen('screen-start');
+        updateScore();
+        updateTimer();
+      }
+    </script>
+  </body>
+</html>
