@@ -352,7 +352,11 @@
       // Создание A-Frame сцены динамически (камера запрашивается только здесь)
       function buildScene(lat, lon) {
         var wrapper = document.getElementById('ar-scene-wrapper');
-        wrapper.style.cssText = 'display:block; position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:1;';
+        wrapper.style.position = 'fixed';
+        wrapper.style.top = '0';
+        wrapper.style.left = '0';
+        wrapper.style.right = '0';
+        wrapper.style.bottom = '0';
 
         var scene = document.createElement('a-scene');
         scene.setAttribute('id', 'ar-scene');
@@ -360,13 +364,6 @@
         scene.setAttribute('arjs', 'sourceType: webcam; videoTexture: true; debugUIEnabled: false; trackingMethod: best');
         scene.setAttribute('renderer', 'antialias: true; alpha: true');
         scene.setAttribute('embedded', '');
-
-        scene.style.width  = '100vw';
-        scene.style.height = '100vh';
-        scene.style.position = 'fixed';
-        scene.style.top = '0';
-        scene.style.left = '0';
-        
         scene.style.width = '100%';
         scene.style.height = '100%';
 
@@ -417,15 +414,14 @@
         var scene = document.getElementById('ar-scene');
         if (!scene) return;
 
-        var x = (Math.random() - 0.5) * 20;
+        var x = (Math.random() - 0.5) * 10;
         var ball = document.createElement('a-sphere');
         var id = 'ball-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
         ball.setAttribute('id', id);
         ball.setAttribute('class', 'enemy');
         ball.setAttribute('color', '#ff3333');
-        ball.setAttribute('radius', '1');
-        var z = -8 - Math.random() * 8;
-        ball.setAttribute('position', x + ' 12 ' + z);
+        ball.setAttribute('radius', '0.8');
+        ball.setAttribute('position', x + ' 12 -8');
         ball.setAttribute('visible', 'true');
         ball.setAttribute('shadow', '');
         ball.setAttribute('animation__fall',
